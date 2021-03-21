@@ -4,6 +4,9 @@ library(ggmap)
 library(cowplot)
 library(sf)
 library(raster)
+library(ggspatial)
+library(ggsn)
+library(magick)
 
 my.theme <- theme_classic() +
   theme(text=element_text(size=12, family="Arial"),
@@ -17,10 +20,23 @@ my.theme <- theme_classic() +
         legend.title=element_text(size=12),
         plot.title=element_text(size=12, hjust = 0.5))
 
+ggmap_rast <- function(map){
+  map_bbox <- attr(map, 'bb') 
+  .extent <- extent(as.numeric(map_bbox[c(2,4,1,3)]))
+  my_map <- raster(.extent, nrow= nrow(map), ncol = ncol(map))
+  rgb_cols <- setNames(as.data.frame(t(col2rgb(map))), c('red','green','blue'))
+  red <- my_map
+  values(red) <- rgb_cols[['red']]
+  green <- my_map
+  values(green) <- rgb_cols[['green']]
+  blue <- my_map
+  values(blue) <- rgb_cols[['blue']]
+  stack(red,green,blue)
+}
+
 #FIGURE 1: STUDY AREA####
 
 #Wrangle
-setwd("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis")
 dat <- read.csv("PDTGDataWrangled&Cleaned.csv")
 
 sites <- dat %>% 
@@ -37,7 +53,7 @@ center <- dat %>%
   summarize(long=mean(Longitude),
             lat=mean(Latitude))
 
-map <- get_map(center, zoom=7, force=TRUE, maptype="satellite", color="bw")
+map <- get_map(center, zoom=7, force=TRUE, maptype="satellite", color="color")
 
 map_attributes <- attributes(map)
 
@@ -46,72 +62,111 @@ map_transparent <- matrix(adjustcolor(map,
                                     nrow = nrow(map))
 attributes(map_transparent) <- map_attributes
 
+#trying to reproject imagery
+map.rast <- ggmap_rast(map_transparent)
+crs(map.rast) <- 4326
+
+map.rast.10tm <- map.rast %>% 
+  projectRaster(crs=3400) %>% 
+  as.data.frame(xy=TRUE)
+  
 #Fire map
+fire <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/fire_sa.tif") %>% 
+  aggregate(fact=30) %>% 
+  projectRaster(crs=4326) %>% 
+  as.data.frame(xy=TRUE) %>% 
+  dplyr::filter(!is.na(fire_sa))
+
 sites.fire <- sites %>% 
   dplyr::filter(disturbance=="fire")
-map.fire <- ggmap(map_transparent) +
-  geom_point(aes(x = Longitude, y = Latitude,
-                 fill=time),
-             shape = 21,
-             colour="grey75",
-             data = sites.fire, 
-             alpha = 1,
-             size=3) +
-  scale_fill_viridis_c(name="Years since\ndisturbance", direction=-1) + 
-  ggtitle("Fire") +
+
+map.fire <- ggmap(map) +
+  geom_raster(data=fire, aes(x=x, y=y, fill=fire_sa), na.rm=TRUE) +
+    geom_point(aes(x = Longitude, y = Latitude),
+               shape = 21,
+               colour="grey25",
+               fill="grey75",
+               data = sites.fire, 
+               alpha = 1,
+               size=3) +
+  ggspatial::annotation_north_arrow(location = "br",
+                                    style = ggspatial::north_arrow_orienteering(fill = c("grey75", "grey25"), line_col = "grey75", text_col="grey75"),
+                                    height=unit(1, "cm"),
+                                    width=unit(1, "cm")) +
+  ggsn::scalebar(x.min = -115, x.max = -112.6, 
+                 y.min = 54.6, y.max = 56, 
+                 transform=TRUE, model="WGS84",
+                 dist=50, dist_unit="km",
+                 box.fill=c("grey75", "grey25"),
+                 box.color="grey75",height=0.1,
+                 st.bottom=FALSE, st.dist=0.08, st.size=3, st.color="grey75") +
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +  
   my.theme +
   coord_sf(datum = NA) +
   xlab("") +
   ylab("") +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"),
+  theme(plot.margin = unit(c(0,0.3,0,-0.5), "cm"),
         legend.position = "none")
+map.fire
 
 #Harvest map
+cc <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/harvest_sa.tif") %>% 
+  aggregate(fact=30) %>% 
+  projectRaster(crs=4326) %>% 
+  as.data.frame(xy=TRUE) %>% 
+  dplyr::filter(!is.na(harvest_sa))
+
 sites.cc <- sites %>% 
   dplyr::filter(disturbance=="cc")
-map.cc <- ggmap(map_transparent) +
-  geom_point(aes(x = Longitude, y = Latitude,
-                 fill=time),
+
+map.cc <- ggmap(map) +
+  geom_raster(data=cc, aes(x=x, y=y, fill=harvest_sa), na.rm=TRUE) +
+  geom_point(aes(x = Longitude, y = Latitude),
              shape = 21,
-             colour="grey75",
+             colour="grey25",
+             fill="grey75",
              data = sites.cc, 
              alpha = 1,
              size=3) +
-  scale_fill_viridis_c(name="Years since\ndisturbance",
-                       limits=c(0,80), direction=-1) +   
-  ggtitle("Harvest") +
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +   
   my.theme +
   coord_sf(datum = NA) +
   xlab("") +
   ylab("") +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"),
+  theme(plot.margin = unit(c(0,0.3,0,-0.5), "cm"),
         legend.position = "none")
 
 #Wellpad map
+well <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/wellsmerge_sa.tif") %>% 
+  aggregate(fact=30) %>% 
+  projectRaster(crs=4326) %>% 
+  as.data.frame(xy=TRUE) %>% 
+  dplyr::filter(!is.na(wellsmerge_sa))
+
 sites.well <- sites %>% 
   dplyr::filter(disturbance=="well")
-map.well <- ggmap(map_transparent) +
-  geom_point(aes(x = Longitude, y = Latitude,
-                 fill=time),
+
+map.well <- ggmap(map) +
+  geom_raster(data=well, aes(x=x, y=y, fill=wellsmerge_sa), na.rm=TRUE) +
+  geom_point(aes(x = Longitude, y = Latitude),
              shape = 21,
-             colour="grey75",
+             colour="grey25",
+             fill="grey75",
              data = sites.well, 
              alpha = 1,
              size=3) +
-  scale_fill_viridis_c(name="Years since\ndisturbance",
-                       limits=c(0,80), direction=-1) +   
-  ggtitle("Wellpad") +
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +    
   my.theme +
   coord_sf(datum = NA) +
   xlab("") +
   ylab("") +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"),
+  theme(plot.margin = unit(c(0,0.3,0,-0.5), "cm"),
         legend.position = "none")
 
 #A2. Single disturbance histograms----
@@ -127,12 +182,11 @@ site.1 <- sites %>%
 site.1.fire <- site.1 %>% 
   dplyr::filter(disturbance=="fire")
 hist.fire <- ggplot(site.1.fire) +
-  geom_histogram(aes(x=time, fill=factor(time))) +
-  scale_fill_viridis_d(name="Years since\ndisturbance",
-                       breaks=c(seq(0,80,5)), direction=-1) +   
+  geom_histogram(aes(x=time)) +
+  scale_x_continuous(limits=c(0,80), breaks=c(seq(0,80,20))) +   
   my.theme +
   theme(legend.position = "none") +
-  xlab("Years since disturbance") +
+  xlab("") +
   ylab("Number of study sites") +
   ylim(c(0,30))
 
@@ -140,186 +194,61 @@ hist.fire <- ggplot(site.1.fire) +
 site.1.cc <- site.1 %>% 
   dplyr::filter(disturbance=="cc")
 hist.cc <- ggplot(site.1.cc) +
-  geom_histogram(aes(x=time, fill=factor(time))) +
-  scale_fill_viridis_d(name="Years since\ndisturbance",
-                       breaks=c(seq(0,80,5)), direction=-1) +   
+  geom_histogram(aes(x=time)) +
+  scale_x_continuous(limits=c(0,80), breaks=c(seq(0,80,20))) +   
   my.theme +
   theme(legend.position = "none") +
   xlab("Years since disturbance") +
-  ylab("Number of study sites") +
+  ylab("") +
   ylim(c(0,30))
 
 #Wellpad histogram
 site.1.well <- site.1 %>% 
   dplyr::filter(disturbance=="well")
 hist.well <- ggplot(site.1.well) +
-  geom_histogram(aes(x=time, fill=factor(time))) +
-  scale_fill_viridis_d(name="Years since\ndisturbance",
-                       breaks=c(seq(0,80,5)), direction=-1) +   
+  geom_histogram(aes(x=time)) +
+  scale_x_continuous(limits=c(0,80), breaks=c(seq(0,80,20))) +   
   my.theme +
   theme(legend.position = "none") +
-  xlab("Years since disturbance") +
-  ylab("Number of study sites") +
+  xlab("") +
+  ylab("") +
   ylim(c(0,30))
 
-#A3. Dual disturbance plots----
-
-#Wrangle
-sites.2.min <- sites %>% 
-  dplyr::filter(types==2) %>% 
-  group_by(StationKey, DepYear, Latitude, Longitude, disturbance, pine, wetland) %>% 
-  summarize(time=min(time)) %>% 
-  ungroup()
-
-sites.2 <- sites.2.min %>% 
-  mutate(ID = row_number()) %>% 
-  pivot_wider(id_cols=c(StationKey, DepYear, pine, wetland),
-              names_from=disturbance,
-              names_prefix="time.",
-              values_from=c(time))  %>% 
-  rowwise(StationKey, DepYear, pine, wetland) %>% 
-  mutate(time.min = min(time.cc, time.well, time.fire, na.rm=TRUE)) %>% 
-  ungroup() %>% 
-  left_join(sites.2.min %>% 
-              dplyr::rename(time.min=time))
-
-#CCFR plot
-sites.2.frcc <- sites.2 %>% 
-  dplyr::filter(is.na(time.well))
-
-plot.frcc <- ggplot(sites.2.frcc) +
-  geom_point(aes(x=time.fire, y=time.cc)) +
-  my.theme + 
-  xlab("Years since fire") +
-  ylab("Years since harvest")
-
-
-#CCFR plot
-sites.2.ccwell <- sites.2 %>% 
-  dplyr::filter(is.na(time.fire))
-
-plot.ccwell <- ggplot(sites.2.ccwell) +
-  geom_point(aes(x=time.cc, y=time.well)) +
-  my.theme + 
-  xlab("Years since harvest") +
-  ylab("Years since wellpad clearing")
-
-#WellFR plot
-#CCFR plot
-sites.2.wellfr <- sites.2 %>% 
-  dplyr::filter(is.na(time.cc))
-
-plot.wellfr <- ggplot(sites.2.wellfr) +
-  geom_point(aes(x=time.well, y=time.fire)) +
-  my.theme + 
-  xlab("Years since wellpad clearing") +
-  ylab("Years since fire")
+#A3. Photos----
+photo.fire <- image_ggplot(image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/P6250957.jpg")) +
+  ggtitle("Fire") +
+  theme(plot.title = element_text(hjust = 0.5))
+photo.cc <- image_ggplot(image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/P7221108.jpg")) +
+  ggtitle("Harvest") +
+  theme(plot.title = element_text(hjust = 0.5))
+photo.well <- image_ggplot(image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/stock-photo-88923883.jpg")) +
+  ggtitle("Well site") +
+  theme(plot.title = element_text(hjust = 0.5))
 
 #A5. Make legend----
-plot.legend <- ggmap(map_transparent) +
-  geom_point(aes(x = Longitude, y = Latitude,
-                 fill=time),
+plot.legend <- ggmap(map) +
+  geom_raster(data=cc, aes(x=x, y=y, fill=harvest_sa), na.rm=TRUE) +
+  geom_point(aes(x = Longitude, y = Latitude),
              shape = 21,
-             colour="grey75",
-             data = sites.well, 
+             colour="grey25",
+             fill="grey75",
+             data = sites.cc, 
              alpha = 1,
              size=3) +
-  scale_fill_viridis_c(name="Years since\ndisturbance",
-                       limits=c(0,80), direction=-1) +
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +   
   my.theme +
+  coord_sf(datum = NA) +
+  xlab("") +
+  ylab("") +
+  xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
+  ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
   theme(legend.position="right") +
   guides(fill = guide_colourbar(barwidth = 2.5, barheight = 20))
 #plot.legend
 
 legend <- get_legend(plot.legend)
 
-#Part B. Vegetation Covariates####
-
-#B1. Maps----
-
-sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/PDTG_studyarea_V1.shp")
-
-#Pine
-#pine <- raster("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/pine-200.tif") %>% 
-#  aggregate(factor=30) %>% 
-#  as.data.frame(xy=TRUE)
-
-map.pine <- ggmap(map_transparent) +
-#  geom_raster(data=pine, aes(x=x, y=y, fill=pine.200)) +
-#  geom_sf(data=sa, fill=NA, colour="black") +
-  geom_point(aes(x = Longitude, y = Latitude,
-                 fill=pine*100),
-             shape = 21,
-             colour="grey75",
-             data = sites, 
-             alpha = 1,
-             size=3) +
-#  scale_fill_gradient(name="% pine forest\nwithin 200m",
-#                      low="black", high="green") +
-  scale_fill_viridis_c(name="% pine forest\nwithin 200m",
-                       option="cividis",
-                       direction=-1,
-                       limits=c(0,100)) +
-#  ggtitle("Fire") +
-  my.theme +
-  coord_sf(datum = NA) +
-  xlab("") +
-  ylab("") +
-  xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
-  ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"))
-
-#Wetland
-#wetland <- raster("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/wetland-200.tif")
-
-map.wetland <- ggmap(map_transparent) +
-  geom_point(aes(x = Longitude, y = Latitude,
-                 fill=wetland),
-             shape = 21,
-             colour="grey75",
-             data = sites, 
-             alpha = 1,
-             size=3) +
-  scale_fill_viridis_c(name="Mean wetland\nprobability\nwithin 200m",
-                      option="plasma",
-                      direction=-1,
-                      limits=c(0,1)) +
-  #  ggtitle("Fire") +
-  my.theme +
-  coord_sf(datum = NA) +
-  xlab("") +
-  ylab("") +
-  xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
-  ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"))
-
-#B2. Histograms----
-
-#Pine histogram
-hist.pine <- ggplot(sites) +
-  geom_histogram(aes(x=pine*100, fill=factor(pine*100))) +
-  scale_fill_viridis_d(name="% pine forest\nwithin 200m",
-                       option="cividis",
-                       direction=-1,
-                       breaks=c(seq(0,100,5))) + 
-  my.theme +
-  theme(legend.position = "none") +
-  xlab("% pine forest within 200m") +
-  ylab("Number of study sites")
-
-#Wetland histogram
-hist.wetland <- ggplot(sites) +
-  geom_histogram(aes(x=wetland, fill=factor(wetland))) +
-  scale_fill_viridis_d(name="Mean wetland\nprobability\nwithin 200m",
-                       option="plasma",
-                       direction=-1,
-                       breaks=c(seq(0,1,0.05))) +
-  my.theme +
-  theme(legend.position = "none") +
-  xlab("Mean wetland probability within 200m") +
-  ylab("Number of study sites")
-
-#Part C. Study area map####
+#Part B. North America map####
 
 nam <- map_data("world", region=c("Canada", 
                                   "USA", 
@@ -347,14 +276,14 @@ nam <- map_data("world", region=c("Canada",
 
 nam.eq <- nam %>% 
   st_as_sf(coords=c("long", "lat"), crs=4326) %>% 
-  st_transform(crs=102008) %>%
+  st_transform(crs="+proj=aea +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m no_defs") %>% 
   st_coordinates() %>% 
   data.frame() %>% 
   cbind(nam)
 
 sites.eq.center <- sites %>% 
   st_as_sf(coords=c("Longitude", "Latitude"), crs=4326) %>% 
-  st_transform(crs=102008) %>%
+  st_transform(crs="+proj=aea +lat_1=20 +lat_2=60 +lat_0=40 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m no_defs") %>%
   st_coordinates() %>% 
   as.data.frame() %>% 
   dplyr::summarize(X=mean(X),
@@ -373,9 +302,9 @@ map.nam <- ggplot() +
 
 #Part D: Put it together####
 
-ggsave(plot=grid.arrange(map.fire, map.cc, map.well,
+ggsave(plot=grid.arrange(photo.fire, photo.cc, photo.well,
+                        map.fire, map.cc, map.well,
                          hist.fire, hist.cc, hist.well,
-                         plot.frcc, plot.ccwell, plot.wellfr,
                          legend,
                          map.nam,
                          widths = c(6, 3, 3, 3, 2),
