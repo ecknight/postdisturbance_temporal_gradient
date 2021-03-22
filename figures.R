@@ -45,6 +45,8 @@ sites <- dat %>%
 
 #Part A. Disturbance study sites----
 
+#TO DO: NEEDS STUDY AREA BOUNDARY####
+
 #A1. Maps----
 #Get background data
 register_google(key="AIzaSyCta9P4x7jGNELznpwlx07VZkkLVk3FP4M")
@@ -65,7 +67,6 @@ attributes(map_transparent) <- map_attributes
 #trying to reproject imagery
 map.rast <- ggmap_rast(map_transparent)
 crs(map.rast) <- 4326
-
 map.rast.10tm <- map.rast %>% 
   projectRaster(crs=3400) %>% 
   as.data.frame(xy=TRUE)
@@ -80,8 +81,27 @@ fire <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/fire_sa.tif") %>%
 sites.fire <- sites %>% 
   dplyr::filter(disturbance=="fire")
 
+#Add study area perimeter
+sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/PDTG_studyarea_V1.shp") %>% 
+  st_make_valid() %>% 
+  st_transform(crs=4326)
+
+extent(fire)
+sa.crop <- st_intersection(sa, st_set_crs(st_as_sf(as(raster::extent(-114.9958, -109.9933, 54.58757, 57.92461), "SpatialPolygons")), st_crs(sa)))
+
+write_sf(sa.crop, "StudyAreaCropped.shp")
+
+sa.crop <- readOGR("StudyAreaCropped.shp") %>% 
+  fortify() %>% 
+  mutate(ID = row_number())
+plot(sa.crop)
+
+ggplot() +
+  geom_polygon(data=sa.crop, aes(long, lat), fill=NA, colour="black")
+
 map.fire <- ggmap(map) +
-  geom_raster(data=fire, aes(x=x, y=y, fill=fire_sa), na.rm=TRUE) +
+    geom_raster(data=fire, aes(x=x, y=y, fill=fire_sa), na.rm=TRUE) +
+    geom_polygon(data=sa.crop, aes(long, lat), fill=NA, colour="black") +
     geom_point(aes(x = Longitude, y = Latitude),
                shape = 21,
                colour="grey25",
@@ -107,8 +127,8 @@ map.fire <- ggmap(map) +
   ylab("") +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0.3,0,-0.5), "cm"),
-        legend.position = "none")
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,0,0,0), "cm"))
 map.fire
 
 #Harvest map
@@ -137,8 +157,8 @@ map.cc <- ggmap(map) +
   ylab("") +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0.3,0,-0.5), "cm"),
-        legend.position = "none")
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,0,0,0), "cm"))
 
 #Wellpad map
 well <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/wellsmerge_sa.tif") %>% 
@@ -166,9 +186,8 @@ map.well <- ggmap(map) +
   ylab("") +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
-  theme(plot.margin = unit(c(0,0.3,0,-0.5), "cm"),
-        legend.position = "none")
-
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,0,0,0), "cm"))
 #A2. Single disturbance histograms----
 
 #Wrangle
@@ -185,9 +204,10 @@ hist.fire <- ggplot(site.1.fire) +
   geom_histogram(aes(x=time)) +
   scale_x_continuous(limits=c(0,80), breaks=c(seq(0,80,20))) +   
   my.theme +
-  theme(legend.position = "none") +
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,1,0,-1), "cm")) +
   xlab("") +
-  ylab("Number of study sites") +
+  ylab("") +
   ylim(c(0,30))
 
 #Harvest histogram
@@ -197,9 +217,10 @@ hist.cc <- ggplot(site.1.cc) +
   geom_histogram(aes(x=time)) +
   scale_x_continuous(limits=c(0,80), breaks=c(seq(0,80,20))) +   
   my.theme +
-  theme(legend.position = "none") +
-  xlab("Years since disturbance") +
-  ylab("") +
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,1,0,-1), "cm")) +
+  xlab("") +
+  ylab("Number of study sites") +
   ylim(c(0,30))
 
 #Wellpad histogram
@@ -209,21 +230,52 @@ hist.well <- ggplot(site.1.well) +
   geom_histogram(aes(x=time)) +
   scale_x_continuous(limits=c(0,80), breaks=c(seq(0,80,20))) +   
   my.theme +
-  theme(legend.position = "none") +
-  xlab("") +
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,1,0,-1), "cm")) +
+  xlab("Years since disturbance") +
   ylab("") +
   ylim(c(0,30))
 
 #A3. Photos----
-photo.fire <- image_ggplot(image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/P6250957.jpg")) +
-  ggtitle("Fire") +
-  theme(plot.title = element_text(hjust = 0.5))
-photo.cc <- image_ggplot(image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/P7221108.jpg")) +
-  ggtitle("Harvest") +
-  theme(plot.title = element_text(hjust = 0.5))
-photo.well <- image_ggplot(image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/stock-photo-88923883.jpg")) +
-  ggtitle("Well site") +
-  theme(plot.title = element_text(hjust = 0.5))
+jpeg.fire <- image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/P6250957.jpg") %>% 
+  image_fill('none') %>% 
+  as.raster()
+photo.fire <- ggplot() + 
+  annotation_raster(jpeg.fire, 0, 1, 0, 1) +
+  ylab("Fire") +
+  my.theme +
+  theme(axis.line.x.bottom = element_blank(),
+        axis.line.y.right = element_blank(),
+        axis.title.y.right = element_text(size=16),
+        plot.margin = unit(c(-0.5,0,0.4,0), "cm")) +
+  scale_y_continuous(position="right")
+#photo.fire
+
+jpeg.cc <- image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/P7221108.jpg") %>% 
+  image_fill('none') %>% 
+  as.raster()
+photo.cc <- ggplot() + 
+  annotation_raster(jpeg.cc, 0, 1, 0, 1) +
+  ylab("Harvest") +
+  my.theme +
+  theme(axis.line.x.bottom = element_blank(),
+        axis.line.y.right = element_blank(),
+        axis.title.y.right = element_text(size=16),
+        plot.margin = unit(c(-0.5,0,0.4,0), "cm")) +
+  scale_y_continuous(position="right")
+
+jpeg.well <- image_read("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/postdisturbance_temporal_gradient/Figs/stock-photo-88923883.jpg") %>% 
+  image_fill('none') %>% 
+  as.raster()
+photo.well <- ggplot() + 
+  annotation_raster(jpeg.well, 0, 1, 0, 1) +
+  ylab("Well site") +
+  my.theme +
+  theme(axis.line.x.bottom = element_blank(),
+        axis.line.y.right = element_blank(),
+        axis.title.y.right = element_text(size=16),
+        plot.margin = unit(c(-0.5,0,0.4,0), "cm")) +
+  scale_y_continuous(position="right")
 
 #A5. Make legend----
 plot.legend <- ggmap(map) +
@@ -243,7 +295,7 @@ plot.legend <- ggmap(map) +
   xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
   ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
   theme(legend.position="right") +
-  guides(fill = guide_colourbar(barwidth = 2.5, barheight = 20))
+  guides(fill = guide_colourbar(barwidth = 2.5, barheight = 15))
 #plot.legend
 
 legend <- get_legend(plot.legend)
@@ -297,38 +349,26 @@ map.nam <- ggplot() +
   xlab("") +
   ylab("") +
   my.theme +
-  theme(plot.margin = unit(c(0,0,0,-1.5), "cm"),
+  theme(plot.margin = unit(c(0,0,0,-1), "cm"),
         legend.position="bottom")
+#map.nam
 
-#Part D: Put it together####
+#Part C: Put it together####
 
 ggsave(plot=grid.arrange(photo.fire, photo.cc, photo.well,
                         map.fire, map.cc, map.well,
                          hist.fire, hist.cc, hist.well,
                          legend,
                          map.nam,
-                         widths = c(6, 3, 3, 3, 2),
-                         heights = c(3, 3, 3),
-                         layout_matrix = rbind(c(11, 1, 2, 3, 10),
-                                               c(11, 4, 5, 6, 10),
-                                               c(11, 7, 8, 9, 10))),
-       "Figs/Fig1StudyArea.jpeg", width=15, height=8, units="in", device="jpeg")
+                         widths = c(3, 6, 4, 4),
+                         heights = c(4, 2, 2, 4),
+                         layout_matrix = rbind(c(11, 4, 7, 1),
+                                               c(11, 5, 8, 2),
+                                               c(10, 5, 8, 2),
+                                               c(10, 6, 9, 3))),
+       "Figs/Fig1StudyArea.jpeg", width=12, height=8, units="in", device="jpeg")
 
-#FIGURE 2. CONI SPECTROGRAM####
-wav <- readWave("/Users/ellyknight/Documents/UoA/Presentations/Materials/Recordings/CONI Common nighthawk.wav")
-wav.f <- bwfilter(wav, from=200, to=5400, output="Wave")
-spectro <- ggspectro(wav.f, flim=c(0,8), wl=1024, ovlp=60) +
-  stat_contour(geom="polygon", aes(fill=..level..), bins=30, show.legend=FALSE) +
-  scale_fill_continuous(name="Amplitude\n(dB)\n", limits=c(-40,0),
-                        na.value="transparent", low="white", high="black") + 
-  xlab("Time (s)") +
-  ylab("Frequency (kHz)") +
-  my.theme
-spectro
-
-ggplot2::ggsave(plot=spectro, "/Users/ellyknight/Documents/UoA/Presentations/Materials/Recordings/CONI Common nighthawk - boom.tiff", width=6, height=8, units="in", device="tiff")
-
-#FIGURE 3. DETECTABILITY COVARIATES####
+#FIGURE 2. DETECTABILITY COVARIATES####
 pred.det <- read.csv("PDTGDetectionCovariatePredictions.csv") 
 pred.det$response <- factor(pred.det$response, labels=c("Territorial habitat use", "Home range habitat use"))
 pred.det$cov <- factor(pred.det$cov, levels=c("set", "doy", "s2n1", "s2n2"), labels=c("Hours since sunset", "Day of year", "StN (0.6-1.2 kHz)", "StN (4.4-5.6 kHz)"))

@@ -1,5 +1,5 @@
-load("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTGV16.Rdata")
-save.image("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTGV16.Rdata")
+#load("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTGV16.Rdata")
+#save.image("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTGV16.Rdata")
 
 options(scipen = 999999)
 
@@ -41,8 +41,6 @@ my.theme <- theme_classic() +
 
 #A. READ IN ALL DATA####
 #1. Read in study site data----
-setwd("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis")
-
 site.1 <- read.csv("PDTG_RecordingSelection_SingleYearSingleDisturbance_V5.csv") %>% 
   dplyr::select(ProjectID, DepYear, StationKey, Latitude, Longitude) %>% 
   unique()
@@ -55,41 +53,27 @@ site.3 <- read.csv("PDTG_SiteSelection_MultiYear_V4.csv") %>%
   dplyr::select(ProjectID, DepYear, StationKey, Latitude, Longitude) %>% 
   unique()
 
-site.up <- read.csv("/Users/ellyknight/Documents/UoA/Projects/Complete/StatisticalValidation/Analysis/Analysis/UP_CONIpeent0mv2_20_20_results_validated.csv") %>% 
-  rename(ProjectID=project, StationKey=location, Latitude=lat, Longitude=long) %>% 
-  mutate(DepYear=2015) %>% 
-  dplyr::select(ProjectID, DepYear, StationKey, Latitude, Longitude) %>% 
-  unique()
   
-site <- rbind(site.1, site.2, site.3, site.up) %>% 
+site <- rbind(site.1, site.2, site.3) %>% 
   unique()
 
 #2. Read in recording lists----
-rec.1 <- read.csv("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTG_RecordingSelection_SingleYearSingleDisturbance_V5.csv") %>% 
+rec.1 <- read.csv("PDTG_RecordingSelection_SingleYearSingleDisturbance_V5.csv") %>% 
   mutate(fileID = str_sub(filename, -100, -5),
          fileID = str_replace_all(fileID, "[$]", "_"),
          fileID = str_replace_all(fileID, "[+]", "-")) %>% 
   dplyr::select(StationKey, DepYear, fileID, yday, sundiff)
 
-rec.2 <- read.csv("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTG_RecordingSelection_SingleYearMultiDisturbance_V5.csv") %>% 
+rec.2 <- read.csv("PDTG_RecordingSelection_SingleYearMultiDisturbance_V5.csv") %>% 
   mutate(fileID = str_sub(filename, -100, -5),
          fileID = str_replace_all(fileID, "[$]", "_"),
          fileID = str_replace_all(fileID, "[+]", "-")) %>% 
   dplyr::select(StationKey, DepYear, fileID, yday, sundiff)
 
-rec.3 <- read.csv("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTG_RecordingSelection_MultiYear_V6.csv") %>% 
+rec.3 <- read.csv("PDTG_RecordingSelection_MultiYear_V6.csv") %>% 
   mutate(fileID = str_sub(filename, -100, -5),
          fileID = str_replace_all(fileID, "[$]", "_"),
          fileID = str_replace_all(fileID, "[+]", "-")) %>% 
-  dplyr::select(StationKey, DepYear, fileID, yday, sundiff)
-
-rec.up <- data.frame(filepath=list.files("/Volumes/ECK004/AudioFiles/UP/2015/3MIN", pattern=".wav", recursive=TRUE)) %>% 
-  mutate(file=str_sub(filepath, 3, 100),
-         fileID=str_sub(file, -100, -5)) %>% 
-  separate(fileID, into=c("StationKey", "datename", "timename"), remove=FALSE, sep="_") %>% 
-  mutate(DepYear=2015,
-        yday=1,
-         sundiff=0) %>% 
   dplyr::select(StationKey, DepYear, fileID, yday, sundiff)
   
 rec <- rbind(rec.1, rec.2, rec.3) %>% 
@@ -98,7 +82,6 @@ rec <- rbind(rec.1, rec.2, rec.3) %>%
 summary(rec)
 
 #3. Read in & wrangle validated recognizer results----
-setwd("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Processing")
 val1 <- read.table("PDTG_y1d1_1_CONI0mv2_20_60_results_validated.txt",
                    sep="\t",
                    col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
@@ -123,10 +106,6 @@ val7 <- read.table("PDTG_y1d2_3_CONI0mv2_20_60_results_validated.txt",
 val8 <- read.table("PDTG_y2b_3min_CONI0mv2_20_60_results_validated.txt",
                    sep="\t",
                    col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
-val.up <- read.csv("/Users/ellyknight/Documents/UoA/Projects/Complete/StatisticalValidation/Analysis/Analysis/UP_CONIpeent0mv2_20_20_results_validated.csv") %>% 
-  rename(filepath=path, file=recording, rsl=level, validation=comments) %>% 
-  dplyr::select(file, start, score, rsl, validation) %>% 
-  dplyr::filter(score >=60)
 
 val <- rbind(val1, val2, val3, val4, val5, val6, val7, val8) %>% 
   separate(filepath, into=c("f1", "f2", "f3", "f4", "treatment", "f6", "file"), sep="/", remove=FALSE) %>%
@@ -177,7 +156,6 @@ site.val.rec <- val.rec %>%
   dplyr::filter(!is.na(Latitude))
 
 #5. Read in and wrangle hard rain data-----
-setwd("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis")
 hr1 <- read.csv("HardRainResults_y1d1_1.csv")
 hr2 <- read.csv("HardRainResults_y1d1_2.csv")
 hr3 <- read.csv("HardRainResults_y1d1_3.csv")
@@ -204,7 +182,6 @@ hr <- rbind(hr1, hr2, hr3, hr4, hr5, hr6, hr7, hr8, hr9, hr10) %>%
   mutate(fileID = str_sub(filename, -100, -9)) %>% 
   dplyr::select(-filename)
 
-
 #B. EXTRACT SPATIAL COVARIATES####
 
 #See what the sampling looks like with all the sampled points
@@ -212,7 +189,8 @@ hr <- rbind(hr1, hr2, hr3, hr4, hr5, hr6, hr7, hr8, hr9, hr10) %>%
 #1. Buffer----
 site.sf <- site.val.rec %>% 
   st_as_sf(coords=c("Longitude", "Latitude"), crs=4326) %>% 
-  st_transform(crs="+proj=tmerc +lat_0=0 +lon_0=-115 +k=0.9992 +x_0=500000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0+units=m +no_defs") %>% 
+  st_transform(crs=" +proj=tmerc +lat_0=0 +lon_0=-115 +k=0.9992 +x_0=500000 +y_0=0 +ellps=GRS80 +units=m
++no_defs") %>% 
   mutate(Latitude = site.val.rec$Latitude,
          Longitude = site.val.rec$Longitude) %>% 
   unique()
@@ -227,7 +205,8 @@ site.buff <- site.sf %>%
 #  st_intersection(st_make_valid(read_sf("/Volumes/ECK004/GIS/Projects/PDTG/fire_sa_year.shp")))
 #write_sf(fire.sa, "/Volumes/ECK004/GIS/Projects/PDTG/fire_sa_year_area.shp")
 
-fire.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/fire_sa_year_area.shp")
+fire.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/fire_sa_year_area.shp") %>% 
+  st_transform(crs=crs(site.buff))
 
 #cc.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/harvest_sa.shp") %>% 
 #  st_make_valid() %>% 
@@ -235,7 +214,8 @@ fire.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/fire_sa_year_area.shp")
 #  st_intersection(st_make_valid(read_sf("/Volumes/ECK004/GIS/Projects/PDTG/harvest_sa_year.shp")))
 #write_sf(cc.sa, "/Volumes/ECK004/GIS/Projects/PDTG/harvest_sa_year_area.shp")
 
-cc.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/harvest_sa_year_area.shp")
+cc.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/harvest_sa_year_area.shp") %>% 
+  st_transform(crs=crs(site.buff))
 
 #wells.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/wells_sa.shp") %>% 
 #  st_make_valid() %>% 
@@ -243,7 +223,8 @@ cc.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/harvest_sa_year_area.shp")
 #  st_intersection(st_make_valid(read_sf("/Volumes/ECK004/GIS/Projects/PDTG/wells_sa_year.shp")))
 #write_sf(wells.sa, "/Volumes/ECK004/GIS/Projects/PDTG/well_sa_year_area.shp")
 
-wells.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/well_sa_year_area.shp")
+wells.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/well_sa_year_area.shp") %>% 
+  st_transform(crs=crs(site.buff))
 
 #3. Intersect sites with disturbance polygons----
 site.fire <- data.frame(sitearea= as.numeric(st_area(st_intersection(fire.sa, site.buff)))) %>% 
@@ -266,8 +247,8 @@ site.well <- data.frame(sitearea= as.numeric(st_area(st_intersection(wells.sa, s
   mutate(disturbance="well")
 
 #4. Extract pine and wetland values----
-pine <- raster("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/pine-200.tif")
-wetland <- raster("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/wetland-200.tif")
+pine <- raster("pine-200.tif")
+wetland <- raster("wetland-200.tif")
 
 covs.sf <- data.frame(pine = raster::extract(x=pine, y=site.sf),
                       wetland = raster::extract(x=wetland, y=site.sf)) %>% 
@@ -678,6 +659,7 @@ cov.call.pred <- list()
 for(i in 1:boot){
   
   dat.pinewet <- site.dat %>% 
+    dplyr::select(ProjectID, StationKey, DepYear, cell) %>% 
     group_by(cell) %>% 
     sample_n(1) %>% 
     ungroup() %>% 
@@ -805,13 +787,13 @@ for(i in 1:boot){
   cov.boom.pred[[i]] <- new.dat %>% 
     cbind(predict(cov.boom, type="state", newdata=new.dat)) %>% 
     dplyr::rename(Occu=Predicted, OccuE=SE, OccuLower=lower, OccuUpper=upper) %>% 
-    cbind(predict(occboom, type="det", newdata=new.dat)) %>% 
+    cbind(predict(cov.boom, type="det", newdata=new.dat)) %>% 
     dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper)
   
   cov.call.pred[[i]] <- new.dat %>% 
     cbind(predict(cov.call, type="state", newdata=new.dat)) %>% 
     dplyr::rename(Occu=Predicted, OccuE=SE, OccuLower=lower, OccuUpper=upper) %>% 
-    cbind(predict(occcall, type="det", newdata=new.dat)) %>% 
+    cbind(predict(cov.call, type="det", newdata=new.dat)) %>% 
     dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper)
   
   print(paste0("Finished bootstrap ", i))
@@ -906,7 +888,7 @@ pred.cov.boom <- rbindlist(cov.boom.pred) %>%
             OccuLower = mean(OccuLower),
             OccuUpper = mean(OccuUpper)) %>% 
   ungroup()
-head(pred.1d.boom)
+head(pred.cov.boom)
 
 pred.cov.call <- rbindlist(cov.call.pred) %>% 
   group_by(wetland) %>% 
@@ -914,7 +896,7 @@ pred.cov.call <- rbindlist(cov.call.pred) %>%
             OccuLower = mean(OccuLower),
             OccuUpper = mean(OccuUpper)) %>% 
   ungroup()
-head(pred.1d.call)
+head(pred.cov.call)
 
 write.csv(pred.cov.boom, "PDTGVegetationPredictionsBoom.csv", row.names = FALSE)
 write.csv(pred.cov.call, "PDTGVegetationPredictionsCall.csv", row.names = FALSE)
