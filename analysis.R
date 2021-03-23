@@ -1,5 +1,5 @@
-#load("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTGV16.Rdata")
-#save.image("/Users/ellyknight/Documents/UoA/Projects/Projects/PDTG/Analysis/PDTGV16.Rdata")
+#title: Analysis of common nighthawk disturbance response
+#author: Elly C. Knight
 
 options(scipen = 999999)
 
@@ -94,20 +94,11 @@ val3 <- read.table("PDTG_y1d1_3_CONI0mv2_20_60_results_validated.txt",
 val4 <- read.table("PDTG_y1d1_4_CONI0mv2_20_60_results_validated.txt",
                    sep="\t",
                    col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
-val5 <- read.table("PDTG_y1d2_1_CONI0mv2_20_60_results_validated.txt",
-                   sep="\t",
-                   col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
-val6 <- read.table("PDTG_y1d2_2_CONI0mv2_20_60_results_validated.txt",
-                   sep="\t",
-                   col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
-val7 <- read.table("PDTG_y1d2_3_CONI0mv2_20_60_results_validated.txt",
-                   sep="\t",
-                   col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
-val8 <- read.table("PDTG_y2b_3min_CONI0mv2_20_60_results_validated.txt",
+val5 <- read.table("PDTG_y2b_3min_CONI0mv2_20_60_results_validated.txt",
                    sep="\t",
                    col.names = c("filepath", "start", "duration", "rsl", "quality", "score", "recognizer", "validation"))
 
-val <- rbind(val1, val2, val3, val4, val5, val6, val7, val8) %>% 
+val <- rbind(val1, val2, val3, val4, val5) %>% 
   separate(filepath, into=c("f1", "f2", "f3", "f4", "treatment", "f6", "file"), sep="/", remove=FALSE) %>%
   dplyr::select(file, start, score, rsl, validation) %>% 
   mutate(validation = case_when(validation=="" ~ "n",
@@ -309,7 +300,8 @@ dat <- dat.rec %>%
   ungroup() %>% 
   inner_join(dat.rec) %>% 
   mutate(call=ifelse(siteboom==1, 0, call),
-         ID = paste(StationKey, DepYear))
+         ID = paste(StationKey, DepYear)) %>% 
+  dplyr::filter(types==1)
 
 summary(dat)
 
@@ -318,7 +310,7 @@ set.seed(1234)
 site.dat <- dat %>% 
   dplyr::select(StationKey, DepYear) %>% 
   unique() %>% 
-  sample_n(800) %>% 
+  sample_n(400) %>% 
   left_join(dat) %>% 
   dplyr::select(ProjectID, StationKey, DepYear, Latitude, Longitude, disturbance, time, sitearea, pine, wetland, cell, types, count) %>% 
   unique()
@@ -437,16 +429,16 @@ ggplot(dat, aes(y=boom, x=yday)) +
   geom_jitter() +
   geom_smooth()
 
-ggplot(dat, aes(y=boom, x=psd.1)) +
+ggplot(dat, aes(y=boom, x=log(psd.1))) +
   geom_point() +
   geom_smooth() #third order?
 
 ggplot(dat, aes(y=boom, x=s2n.1)) +
-  geom_point() +
+  geom_jitter() +
   geom_smooth() #second order
 
 ggplot(dat, aes(y=boom, x=s2n.2)) +
-  geom_point() +
+  geom_jitter() +
   geom_smooth() #second order
 
 #CALL
@@ -459,77 +451,82 @@ ggplot(dat, aes(y=call, x=yday)) +
   geom_smooth()
 
 ggplot(dat, aes(y=call, x=psd.1)) +
-  geom_point() +
+  geom_jitter() +
   geom_smooth() #third order?
 
 ggplot(dat, aes(y=call, x=s2n.1)) +
-  geom_point() +
+  geom_jitter() +
   geom_smooth() #second order
 
 ggplot(dat, aes(y=call, x=s2n.2)) +
-  geom_point() +
+  geom_jitter() +
   geom_smooth() #second order
 
 
 #4. Model----
-detboom <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2) + psd1
+detboom <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2) + log(psd1)
                 ~1,
                 data=df.boom)
 detboom.dredge <- dredge(detboom, trace=2)
 detboom.dredge
 detboom.dredge.tbl <- detboom.dredge %>% 
-  data.frame() %>% 
-  dplyr::select(df, AICc, delta, weight) %>% 
-  mutate(AICc=round(AICc, 2),
+  data.frame()
+colnames(detboom.dredge.tbl) <- c("p", "psi", "doy", "psd1", "s2n1", "s2n12", "s2n2", "s2n22", "set", "df", "loglik", "aicc", "delta", "weight")
+detboom.dredge.select <- detboom.dredge.tbl %>% 
+  mutate(s2n1 = ifelse(!is.na(s2n1), 1, 0),
+         s2n12 = ifelse(!is.na(s2n12), 1, 0),
+         s2n2 = ifelse(!is.na(s2n2), 1, 0),
+         s2n22 = ifelse(!is.na(s2n22), 1, 0),
+         s2n1tot = s2n1 + s2n12,
+         s2n2tot = s2n2 + s2n22) %>% 
+  dplyr::filter(s2n1tot!=1,
+                s2n2tot!=1) %>% 
+  mutate(delta = ifelse(row_number()==1, 0, aicc - lag(aicc) + lag(delta)),
+         rellik = exp(-0.5*delta),
+         weight = rellik/sum(rellik)) %>% 
+  mutate(aicc=round(aicc, 2),
          delta=round(delta, 2),
          weight=round(weight, 2)) %>% 
   head(6)
-View(detboom.dredge.tbl)
 
-detboom.use <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+detboom.use <- occu(~ s2n2 + I(s2n2^2)
                     ~1,
                     data=df.boom) 
 summary(detboom.use)
 
 
-detcall <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2) + psd1
+detcall <- occu(~ Set + Doy + s2n2 + I(s2n2^2) + log(psd1)
                 ~1,
                 data=df.call)
 detcall.dredge <- dredge(detcall, trace=2)
 detcall.dredge
 detcall.dredge.tbl <- detcall.dredge %>% 
-  data.frame() %>% 
-  dplyr::select(df, AICc, delta, weight) %>% 
-  mutate(AICc=round(AICc, 2),
+  data.frame()
+colnames(detcall.dredge.tbl) <- c("p", "psi", "doy", "psd1", "s2n1", "s2n12", "s2n2", "s2n22", "set", "df", "loglik", "aicc", "delta", "weight")
+detcall.dredge.select <- detcall.dredge.tbl %>% 
+  mutate(s2n1 = ifelse(!is.na(s2n1), 1, 0),
+         s2n12 = ifelse(!is.na(s2n12), 1, 0),
+         s2n2 = ifelse(!is.na(s2n2), 1, 0),
+         s2n22 = ifelse(!is.na(s2n22), 1, 0),
+         s2n1tot = s2n1 + s2n12,
+         s2n2tot = s2n2 + s2n22) %>% 
+  dplyr::filter(s2n1tot!=1,
+                s2n2tot!=1) %>% 
+  mutate(delta = ifelse(row_number()==1, 0, aicc - lag(aicc) + lag(delta)),
+         rellik = exp(-0.5*delta),
+         weight = rellik/sum(rellik)) %>% 
+  mutate(aicc=round(aicc, 2),
          delta=round(delta, 2),
          weight=round(weight, 2)) %>% 
   head(6)
-View(detcall.dredge.tbl)
 
-detcall.use <- occu(~ Doy + s2n2 + I(s2n2^2)
+detcall.use <- occu(~ s2n2 + I(s2n2^2)
                     ~1,
                     data=df.call)
 summary(detcall.use)
 
-#Thought: makes sense that boom includes s2n1 and s2n2 because it includes both frequency bands for the call
-
 #5. Predict----
-newdat.det.boom.s2n1 <- expand.grid(s2n1 = seq(min(dat$s2n.1), max(dat$s2n.1), 0.05),
-                      s2n2 = mean(dat$s2n.2),
-                      Doy = mean(dat$yday),
-                      Set = mean(dat$sundiff))
-pred.det.boom.s2n1 <- newdat.det.boom.s2n1 %>% 
-  cbind(predict(detboom.use, type="det", newdata=newdat.det.boom.s2n1)) %>% 
-  dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper) %>% 
-  mutate(response="boom",
-         cov="s2n1") %>% 
-  rename(x=s2n1) %>% 
-  dplyr::select(response, cov, x, Det, DetLower, DetUpper)
-
-newdat.det.boom.s2n2 <- expand.grid(s2n2 = seq(min(dat$s2n.2), max(dat$s2n.2), 0.05),
-                                    s2n1 = mean(dat$s2n.1),
-                                    Doy = mean(dat$yday),
-                                    Set = mean(dat$sundiff))
+newdat.det.boom.s2n2 <- expand.grid(s2n2 = seq(min(dat$s2n.2), max(dat$s2n.2), 0.05))
 pred.det.boom.s2n2 <- newdat.det.boom.s2n2 %>% 
   cbind(predict(detboom.use, type="det", newdata=newdat.det.boom.s2n2)) %>% 
   dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper) %>% 
@@ -538,34 +535,7 @@ pred.det.boom.s2n2 <- newdat.det.boom.s2n2 %>%
   rename(x=s2n2) %>% 
   dplyr::select(response, cov, x, Det, DetLower, DetUpper)
 
-newdat.det.boom.doy <- expand.grid(s2n2 = mean(dat$s2n.2),
-                                    s2n1 = mean(dat$s2n.1),
-                                    Doy = seq(min(dat$yday), max(dat$yday), 1),
-                                    Set = mean(dat$sundiff))
-pred.det.boom.doy <- newdat.det.boom.doy %>% 
-  cbind(predict(detboom.use, type="det", newdata=newdat.det.boom.doy)) %>% 
-  dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper) %>% 
-  mutate(response="boom",
-         cov="doy") %>% 
-  rename(x=Doy) %>% 
-  dplyr::select(response, cov, x, Det, DetLower, DetUpper)
-
-newdat.det.boom.set <- expand.grid(s2n2 = mean(dat$s2n.2),
-                                   s2n1 = mean(dat$s2n.1),
-                                   Doy = mean(dat$yday),
-                                   Set = seq(min(dat$sundiff), max(dat$sundiff), 0.05))
-pred.det.boom.set <- newdat.det.boom.set %>% 
-  cbind(predict(detboom.use, type="det", newdata=newdat.det.boom.set)) %>% 
-  dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper) %>% 
-  mutate(response="boom",
-         cov="set") %>% 
-  rename(x=Set) %>% 
-  dplyr::select(response, cov, x, Det, DetLower, DetUpper)
-
-newdat.det.call.s2n2 <- expand.grid(s2n2 = seq(min(dat$s2n.2), max(dat$s2n.2), 0.05),
-                                    s2n1 = mean(dat$s2n.1),
-                                    Doy = mean(dat$yday),
-                                    Set = mean(dat$sundiff))
+newdat.det.call.s2n2 <- expand.grid(s2n2 = seq(min(dat$s2n.2), max(dat$s2n.2), 0.05))
 pred.det.call.s2n2 <- newdat.det.call.s2n2 %>% 
   cbind(predict(detcall.use, type="det", newdata=newdat.det.call.s2n2)) %>% 
   dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper) %>% 
@@ -574,19 +544,7 @@ pred.det.call.s2n2 <- newdat.det.call.s2n2 %>%
   rename(x=s2n2) %>% 
   dplyr::select(response, cov, x, Det, DetLower, DetUpper)
 
-newdat.det.call.doy <- expand.grid(s2n2 = mean(dat$s2n.2),
-                                   s2n1 = mean(dat$s2n.1),
-                                   Doy = seq(min(dat$yday), max(dat$yday), 1),
-                                   Set = mean(dat$sundiff))
-pred.det.call.doy <- newdat.det.call.doy %>% 
-  cbind(predict(detcall.use, type="det", newdata=newdat.det.call.doy)) %>% 
-  dplyr::rename(Det=Predicted, DetSE=SE, DetLower=lower, DetUpper=upper) %>% 
-  mutate(response="call",
-         cov="doy") %>% 
-  rename(x=Doy) %>% 
-  dplyr::select(response, cov, x, Det, DetLower, DetUpper)
-
-pred.det <- rbind(pred.det.boom.s2n1, pred.det.boom.s2n2, pred.det.boom.set, pred.det.boom.doy, pred.det.call.s2n2, pred.det.call.doy)
+pred.det <- rbind(pred.det.boom.s2n2, pred.det.call.s2n2)
 
 write.csv(pred.det, "PDTGDetectionCovariatePredictions.csv", row.names = FALSE)
 
@@ -599,15 +557,19 @@ ggplot(pred.det) +
   my.theme
 
 #7. Calculate detectability---
-det.boom.det <- linearComb(detboom.use['det'], c(1, mean(dat$sundiff), mean(dat$yday), mean(dat$s2n.1), (mean(dat$s2n.1))^2, mean(dat$s2n.2), (mean(dat$s2n.2))^2)) %>% 
+linearComb(detboom.use['det'], c(1, mean(dat$s2n.2), (mean(dat$s2n.2))^2)) %>% 
   backTransform() %>% 
   confint(level=0.0)
-det.boom.det
+linearComb(detboom.use['det'], c(1, mean(dat$s2n.2), (mean(dat$s2n.2))^2)) %>% 
+  backTransform() %>% 
+  confint(level=0.95)
 
-det.call.det <- linearComb(detcall.use['det'], c(1, mean(dat$yday), mean(dat$s2n.2), (mean(dat$s2n.2))^2)) %>% 
+linearComb(detcall.use['det'], c(1, mean(dat$s2n.2), (mean(dat$s2n.2))^2)) %>% 
   backTransform() %>% 
   confint(level=0.0)
-det.call.det
+linearComb(detcall.use['det'], c(1, mean(dat$s2n.2), (mean(dat$s2n.2))^2)) %>% 
+  backTransform() %>% 
+  confint(level=0.95)
 
 #D. HABITAT COVARIATES####
 #1. Check for vif & covariation----
@@ -728,19 +690,19 @@ for(i in 1:boot){
   df.call.pinewet <- unmarkedFrameOccu(hist.pinewet.call, siteCovs=site.cov.pinewet, obsCovs=obs.cov.pinewet)
   
   #6. Model----
-  cov1 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  cov1 <- occu(~ s2n2 + I(s2n2^2)
                ~pine*wetland + pine*I(wetland^2),
                data=df.boom.pinewet)
-  cov2<- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  cov2<- occu(~ s2n2 + I(s2n2^2)
               ~pine + wetland + I(wetland^2),
               data=df.boom.pinewet)
-  cov3<- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  cov3<- occu(~ s2n2 + I(s2n2^2)
               ~pine,
               data=df.boom.pinewet)
-  cov4<- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  cov4<- occu(~ s2n2 + I(s2n2^2)
               ~wetland + I(wetland^2),
               data=df.boom.pinewet)
-  cov5<- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  cov5<- occu(~ s2n2 + I(s2n2^2)
               ~1,
               data=df.boom.pinewet)
   
@@ -755,19 +717,19 @@ for(i in 1:boot){
     mutate(boot=i,
            var=row.names(data.frame(cov3@estimates@estimates[["state"]]@estimates)))
   
-  cov1 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  cov1 <- occu(~ s2n2 + I(s2n2^2)
                ~pine*wetland + pine*I(wetland^2),
                data=df.call.pinewet)
-  cov2<- occu(~ Doy + s2n2 + I(s2n2^2)
+  cov2<- occu(~ s2n2 + I(s2n2^2)
               ~pine + wetland + I(wetland^2),
               data=df.call.pinewet)
-  cov3<- occu(~ Doy + s2n2 + I(s2n2^2)
+  cov3<- occu(~ s2n2 + I(s2n2^2)
               ~pine,
               data=df.call.pinewet)
-  cov4<- occu(~ Doy + s2n2 + I(s2n2^2)
+  cov4<- occu(~ s2n2 + I(s2n2^2)
               ~wetland +I(wetland^2),
               data=df.call.pinewet)
-  cov5<- occu(~ Doy + s2n2 + I(s2n2^2)
+  cov5<- occu(~ s2n2 + I(s2n2^2)
               ~1,
               data=df.call.pinewet)
   
@@ -914,232 +876,7 @@ plot.cov.call <- ggplot(pred.cov.call) +
 
 grid.arrange(plot.cov.boom, plot.cov.call, ncol=2)
 
-#E. HOW TO QUANTIFY DISTURBANCE?####
-#1. Wrangle covariates----
-site.1t2d <- site.dat %>% 
-  dplyr::filter(types==1, count>1) %>% 
-  group_by(StationKey, DepYear, cell, pine, wetland, disturbance) %>% 
-  mutate(n=row_number()) %>% 
-  ungroup() %>% 
-  pivot_wider(id_cols=c(StationKey, DepYear, cell, pine, wetland, disturbance),
-              names_from=n,
-              values_from=c(time, sitearea)) %>% 
-  rowwise(StationKey, DepYear, cell, pine, wetland, disturbance) %>% 
-  mutate(timemin=min(time_1, time_2),
-         timemean=mean(time_1, time_2),
-         siteareamax=max(sitearea_1, sitearea_2),
-         siteareasum=sum(sitearea_1, sitearea_2)) %>% 
-  ungroup() %>% 
-  arrange(StationKey)
-
-table(site.1t2d$disturbance)
-nrow(site.1t2d)
-
-#2. Check for vif & covariation----
-vif(site.1t2d %>% 
-      dplyr::select(timemin, timemean, siteareamax, siteareasum) %>% 
-      data.frame())
-
-cor(site.1t2d %>% 
-      dplyr::select(timemin, timemean, siteareamax, siteareasum) %>% 
-      data.frame())
-#Take out timemean, siteareasum
-
-ggpairs(site.1t2d %>% 
-          dplyr::select(pine, disturbance, timemin, siteareamax) %>% 
-          data.frame())
-
-#3. Spatial thinning----
-boot <- 100
-
-occ2t.boom.aic <- list()
-occ2t.call.aic <- list()
-for(i in 1:boot){
-  
-  dat.1t2d <- data.frame()
-  
-  for(h in 1:length(disturbances)){
-    
-    disturbance.h <- disturbances[h]
-    
-    site.h <- site.1t2d %>% 
-      dplyr::filter(disturbance==disturbance.h)
-    
-    dat.h <- site.h %>% 
-      group_by(cell) %>% 
-      sample_n(1) %>% 
-      ungroup() %>% 
-      left_join(dat)
-    
-    dat.1t2d <- rbind(dat.1t2d, dat.h)
-  }
-  
-  table(dat.1t2d$boom, dat.1t2d$call)
-  
-  #5. Format into unmarked objects----
-  hist.boom.1t2d <- dat.1t2d %>% 
-    dplyr::select(ID, n, boom) %>% 
-    spread(key = n, value = boom) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.call.1t2d <- dat.1t2d%>% 
-    dplyr::select(ID, n, call) %>% 
-    spread(key = n, value = call) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Set.1t2d <- dat.1t2d %>%
-    dplyr::select(ID, n, sundiff) %>% 
-    spread(key = n, value = sundiff) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame() 
-  
-  hist.Doy.1t2d <- dat.1t2d %>% 
-    dplyr::select(ID, n, yday) %>% 
-    spread(key=n, value=yday) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n1.1t2d <- dat.1t2d %>% 
-    dplyr::select(ID, n, s2n.1) %>% 
-    spread(key=n, value=s2n.1) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n2.1t2d <- dat.1t2d %>% 
-    dplyr::select(ID, n, s2n.2) %>% 
-    spread(key=n, value=s2n.2) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  obs.cov.1t2d <- list(Set = hist.Set.1t2d, Doy = hist.Doy.1t2d, s2n1 = hist.s2n1.1t2d, s2n2 = hist.s2n2.1t2d)
-  
-  site.cov.1t2d <- dat.1t2d %>% 
-    dplyr::select(ID, disturbance, pine, wetland, timemin, siteareamax) %>% 
-    unique() %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  df.boom <- unmarkedFrameOccu(hist.boom.1t2d, siteCovs=site.cov.1t2d, obsCovs=obs.cov.1t2d)
-  df.call <- unmarkedFrameOccu(hist.call.1t2d, siteCovs=site.cov.1t2d, obsCovs=obs.cov.1t2d)
-  
-  #6. Model----
-  rm(list=ls(pattern="^mod"))
-  #BOOM
-  mod1 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-                   ~timemin*siteareamax + pine,
-                   data=df.boom))
-  mod2 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-                   ~timemin + siteareamax + pine,
-                   data=df.boom))
-  mod3 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-                   ~timemin + pine,
-                   data=df.boom))
-  mod4 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-                   ~siteareamax + pine,
-                   data=df.boom))
-  
-  rm(err)
-  err <- try(aictab(list(mod1, mod2, mod3, mod4), sort=FALSE))
-  
-  if(inherits(err, "try-error")){
-    next
-  }
-  
-  occ2t.boom.aic[[i]] <- aictab(list(mod1, mod2, mod3, mod4), sort=FALSE) %>% 
-    data.frame() %>% 
-    mutate(boot=i,
-           nboom=boom)
-  
-  rm(list=ls(pattern="^mod"))
-  #CALL
-  mod1 <- try(occu(~ Doy + s2n2 + I(s2n2^2)
-                   ~timemin*siteareamax + wetland + I(wetland^2),
-                   data=df.call))
-  mod2 <- try(occu(~ Doy + s2n2 + I(s2n2^2)
-                   ~timemin + siteareamax + wetland + I(wetland^2),
-                   data=df.call))
-  mod3 <- try(occu(~ Doy + s2n2 + I(s2n2^2)
-                   ~timemin + wetland + I(wetland^2),
-                   data=df.call))
-  mod4 <- try(occu(~ Doy + s2n2 + I(s2n2^2)
-                   ~siteareamax + wetland + I(wetland^2),
-                   data=df.call))
-  
-  rm(err)
-  err <- try(aictab(list(mod1, mod2, mod3, mod4)))
-  
-  if(inherits(err, "try-error")) {
-    next
-  }
-  
-  occ2t.call.aic[[i]] <- aictab(list(mod1, mod2, mod3, mod4), sort=FALSE) %>% 
-    data.frame() %>% 
-    mutate(boot=i,
-           ncall=call)
-  
-  print(paste0("Finished bootstrap ", i))
-  
-}
-
-#7. Collapse bootstrapped results----
-occ2t.boom <- rbindlist(occ2t.boom.aic) %>% 
-  group_by(Modnames) %>% 
-  summarize(delta.mn=round(mean(Delta_AICc), 2),
-            delta.sd=round(sd(Delta_AICc), 2),
-            delta.ci=round(sd(Delta_AICc)/sqrt(100)*1.96, 2),
-            wt.mn=round(mean(AICcWt), 2),
-            wt.sd=round(sd(AICcWt), 2),
-            wt.ci=round(sd(AICcWt)/sqrt(100)*1.96, 2),
-            k=mean(K),
-            aic.mn=round(mean(AICc), 2),
-            aic.sd=round(sd(AICc), 2)) %>% 
-  ungroup() %>% 
-  mutate(aic=paste0(aic.mn, " (SD=", aic.sd, ")"),
-         delta=paste0(delta.mn, " (SD=", delta.sd, ")"),
-         wt=paste0(wt.mn, " (SD=", wt.sd, ")")) %>% 
-  arrange(delta.mn)
-
-occ2t.boom.tbl <- occ2t.boom %>%   
-  dplyr::select(Modnames, k, aic, delta, wt)
-View(occ2t.boom.tbl)
-
-ggplot(occ2t.boom) +
-  geom_bar(aes(x=Modnames, y=delta.mn), stat="identity") +
-  geom_errorbar(aes(x=Modnames, ymin=delta.mn-delta.ci, ymax=delta.mn+delta.ci), width=0.2, position=position_dodge(0.9))
-#Minimum time
-
-occ2t.call <- rbindlist(occ2t.call.aic) %>% 
-  group_by(Modnames) %>% 
-  summarize(delta.mn=round(mean(Delta_AICc), 2),
-            delta.sd=round(sd(Delta_AICc), 2),
-            delta.ci=round(sd(Delta_AICc)/sqrt(100)*1.96, 2),
-            wt.mn=round(mean(AICcWt), 2),
-            wt.sd=round(sd(AICcWt), 2),
-            wt.ci=round(sd(AICcWt)/sqrt(100)*1.96, 2),
-            k=mean(K),
-            aic.mn=round(mean(AICc), 2),
-            aic.sd=round(sd(AICc), 2)) %>% 
-  ungroup() %>% 
-  mutate(aic=paste0(aic.mn, " (SD=", aic.sd, ")"),
-         delta=paste0(delta.mn, " (SD=", delta.sd, ")"),
-         wt=paste0(wt.mn, " (SD=", wt.sd, ")"))
-
-occ2t.call.tbl <- occ2t.call %>%   
-  dplyr::select(Modnames, k, aic, delta, wt) %>% 
-  arrange(delta)
-View(occ2t.call.tbl)
-#Minimum time
-
-#F. DOES DISTURBANCE TYPE MATTER?####
+#E. DOES DISTURBANCE TYPE MATTER?####
 #1. Wrangle covariates----
 site.1d1t <- site.dat %>% 
   dplyr::filter(types==1) %>% 
@@ -1274,31 +1011,31 @@ for(g in 1:boot){
   
   #7. Model----
   #BOOM
-  occ1 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ1 <- occu(~ s2n2 + I(s2n2^2)
                ~time*pine + time*disturbance,
                data=df.boom)
-  occ2 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ2 <- occu(~ s2n2 + I(s2n2^2)
                ~time*pine + disturbance,
                data=df.boom)
-  occ3 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ3 <- occu(~ s2n2 + I(s2n2^2)
                ~time*disturbance + pine,
                data=df.boom)
-  occ4 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ4 <- occu(~ s2n2 + I(s2n2^2)
                ~time + disturbance + pine,
                data=df.boom)
-  occ5 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ5 <- occu(~ s2n2 + I(s2n2^2)
                ~time*pine,
                data=df.boom)
-  occ6 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ6 <- occu(~ s2n2 + I(s2n2^2)
                ~time + pine,
                data=df.boom)
-  occ7 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ7 <- occu(~ s2n2 + I(s2n2^2)
                ~disturbance*pine,
                data=df.boom)
-  occ8 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ8 <- occu(~ s2n2 + I(s2n2^2)
                ~disturbance + pine,
                data=df.boom)
-  occ9 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
+  occ9 <- occu(~ s2n2 + I(s2n2^2)
                ~pine,
                data=df.boom)
   
@@ -1313,31 +1050,31 @@ for(g in 1:boot){
            var=row.names(data.frame(occ1@estimates@estimates[["state"]]@estimates)))
   
   #CALL
-  occ1 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ1 <- occu(~ s2n2 + I(s2n2^2)
                ~time*wetland + time*I(wetland^2) + time*disturbance,
                data=df.call)
-  occ2 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ2 <- occu(~  s2n2 + I(s2n2^2)
                ~time*wetland + time*I(wetland^2) + disturbance,
                data=df.call)
-  occ3 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ3 <- occu(~  s2n2 + I(s2n2^2)
                ~time + wetland + I(wetland^2) + time*disturbance,
                data=df.call)
-  occ4 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ4 <- occu(~  s2n2 + I(s2n2^2)
                ~time + disturbance + wetland + I(wetland^2),
                data=df.call)
-  occ5 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ5 <- occu(~  s2n2 + I(s2n2^2)
                ~time*wetland + time*I(wetland^2),
                data=df.call)
-  occ6 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ6 <- occu(~  s2n2 + I(s2n2^2)
                ~time + wetland + I(wetland^2),
                data=df.call)
-  occ7 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ7 <- occu(~  s2n2 + I(s2n2^2)
                ~disturbance*wetland + disturbance*I(wetland^2),
                data=df.call)
-  occ8 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ8 <- occu(~  s2n2 + I(s2n2^2)
                ~disturbance + wetland + I(wetland^2),
                data=df.call)
-  occ9 <- occu(~ Doy + s2n2 + I(s2n2^2)
+  occ9 <- occu(~  s2n2 + I(s2n2^2)
                ~wetland + I(wetland^2),
                data=df.call)
   
@@ -1352,6 +1089,8 @@ for(g in 1:boot){
            var=row.names(data.frame(occ8@estimates@estimates[["state"]]@estimates)))
   
   #8. Predict----
+  occboom <- occ1
+  
   occ.1d.boom.pred[[g]] <- new.dat %>% 
     cbind(predict(occboom, type="state", newdata=new.dat)) %>% 
     dplyr::rename(Occu=Predicted, OccuE=SE, OccuLower=lower, OccuUpper=upper) %>% 
@@ -1360,6 +1099,8 @@ for(g in 1:boot){
     dplyr::filter((disturbance=="fire" & time <= fire.max & time >= fire.min) |
                     (disturbance=="well" & time <= wells.max & time >= wells.min) |
                     (disturbance=="cc" & time <= cc.max & time >= cc.min))
+  
+  occcall <- occ8
   
   occ.1d.call.pred[[g]] <- new.dat %>% 
     cbind(predict(occcall, type="state", newdata=new.dat)) %>% 
@@ -1490,679 +1231,3 @@ plot.1d.call <- ggplot(pred.1d.call) +
   my.theme
 
 grid.arrange(plot.1d.boom, plot.1d.call, nrow=2)
-
-
-
-#G. IF THERE ARE TWO TYPES, DO THEY INTERACT?####
-#1. Wrangle covariates----
-#Take out stations where two disturbances are the same year
-site.mintime.2d <- site.dat %>% 
-  dplyr::filter(types==2) %>% 
-  group_by(StationKey, DepYear, cell, Latitude, Longitude, disturbance, pine, wetland) %>% 
-  summarize(time=min(time)) %>% 
-  ungroup()
-
-site.2d <- site.mintime.2d %>% 
-  mutate(ID = row_number()) %>% 
-  pivot_wider(id_cols=c(StationKey, DepYear, cell, pine, wetland),
-              names_from=disturbance,
-              names_prefix="time.",
-              values_from=c(time))  %>% 
-  rowwise(StationKey, DepYear, cell, pine, wetland) %>% 
-  mutate(time.min = min(time.cc, time.well, time.fire, na.rm=TRUE)) %>% 
-  ungroup() %>% 
-  left_join(site.mintime.2d %>% 
-              dplyr::rename(time.min=time)) %>% 
-  dplyr::rename(time.dist=disturbance) %>% 
-  mutate(combo=case_when(is.na(time.cc) ~ "frwell",
-                         is.na(time.well) ~ "ccfr",
-                         is.na(time.fire) ~ "wellcc")) %>% 
-  mutate(ID=paste(StationKey, DepYear))
-
-#2. Visualize availability----
-ggplot(dat %>% 
-         dplyr::filter(types==2)) + 
-  geom_jitter(aes(x=pine, y=time, colour=disturbance)) +
-  geom_smooth(aes(x=pine, y=time, colour=disturbance), method="lm") + 
-  facet_wrap(~disturbance)
-
-
-#G1. CC vs FIRE####
-
-#3. Check for vif & covariation----
-site.ccfr <- site.2d %>%
-  dplyr::filter(is.na(time.well))
-
-vif(site.ccfr %>% 
-      dplyr::select(time.cc, time.fire, time.min, pine, wetland) %>% 
-      data.frame())
-
-cor(site.ccfr %>% 
-      dplyr::select(time.cc, time.fire, time.min, pine, wetland) %>% 
-      data.frame())
-
-ggpairs(site.ccfr %>% 
-          dplyr::select(time.cc, time.fire, time.min, pine, wetland) %>% 
-          data.frame())
-
-#pine and time.fire strongly negatively correlated
-#time.min and time.cc very strongly negatively correlated
-
-
-boot <- 100
-
-occ.ccfr.boom.aic <- list()
-occ.ccfr.call.aic <- list()
-occ.ccfr.boom.mod <- list()
-occ.ccfr.call.mod <- list()
-for(i in 1:boot){
-  
-  #4. Spatial thinning----
-  dat.ccfr <- site.2d %>%
-    dplyr::filter(is.na(time.well)) %>% 
-    unique() %>% 
-    group_by(cell) %>% 
-    sample_n(1) %>% 
-    ungroup() %>% 
-    left_join(dat)
-  
-  table(dat.ccfr$boom, dat.ccfr$call)
-  
-  #5. Format into unmarked objects----
-  hist.boom.ccfr <- dat.ccfr %>% 
-    dplyr::select(ID, n, boom) %>% 
-    spread(key = n, value = boom) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.call.ccfr <- dat.ccfr%>% 
-    dplyr::select(ID, n, call) %>% 
-    spread(key = n, value = call) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Set.ccfr <- dat.ccfr %>% 
-    dplyr::select(ID, n, sundiff) %>% 
-    spread(key=n, value=sundiff) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Doy.ccfr <- dat.ccfr %>% 
-    dplyr::select(ID, n, yday) %>% 
-    spread(key=n, value=yday) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n1.ccfr <- dat.ccfr %>% 
-    dplyr::select(ID, n, s2n.1) %>% 
-    spread(key=n, value=s2n.1) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n2.ccfr <- dat.ccfr %>% 
-    dplyr::select(ID, n, s2n.2) %>% 
-    spread(key=n, value=s2n.2) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  obs.cov.ccfr <- list(Set = hist.Set.ccfr, Doy = hist.Doy.ccfr, s2n1 = hist.s2n1.ccfr, s2n2 = hist.s2n2.ccfr)
-  
-  site.cov.ccfr <- dat.ccfr %>% 
-    dplyr::select(ID, pine, wetland, time.min, time.dist, time.cc, time.fire) %>% 
-    unique() %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  df.boom.ccfr <- unmarkedFrameOccu(hist.boom.ccfr, siteCovs=site.cov.ccfr, obsCovs=obs.cov.ccfr)
-  df.call.ccfr <- unmarkedFrameOccu(hist.call.ccfr, siteCovs=site.cov.ccfr, obsCovs=obs.cov.ccfr)
-  
-  #6. Model----
-  #BOOM
-  occ1 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.cc*time.fire*pine,
-               data=df.boom.ccfr)
-  occ2 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.cc*pine + time.fire*pine,
-               data=df.boom.ccfr)
-  occ3 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.cc*pine,
-               data=df.boom.ccfr)
-  occ4 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.fire*pine,
-               data=df.boom.ccfr)
-  occ5 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.min*pine,
-               data=df.boom.ccfr)
-  
-  #Save out AIC
-  occ.ccfr.boom.aic[[i]] <- aictab(list(occ1, occ2, occ3, occ4, occ5), sort=FALSE) %>% 
-    data.frame() %>% 
-    mutate(boot=i)
-  
-  #Save out top model (hand picked from preview of results, not top AIC)
-  occ.ccfr.boom.mod[[i]] <- summary(occ4)[['state']] %>% 
-    mutate(boot=i,
-           var=row.names(data.frame(occ4@estimates@estimates[["state"]]@estimates)))
-  
-  print(paste0("COMPLETED BOOTSTRAP ", i))
-  
-}
-
-#7. Collapse bootstrapped results----
-#AIC----
-aic.ccfr.boom <- rbindlist(occ.ccfr.boom.aic) %>% 
-  group_by(Modnames) %>% 
-  summarize(delta.mn=round(mean(Delta_AICc), 2),
-            delta.sd=round(sd(Delta_AICc), 2),
-            delta.ci=round(sd(Delta_AICc)/sqrt(100)*1.96, 2),
-            wt.mn=round(mean(AICcWt), 2),
-            wt.sd=round(sd(AICcWt), 2),
-            wt.ci=round(sd(AICcWt)/sqrt(100)*1.96, 2),
-            k=mean(K),
-            aic.mn=round(mean(AICc), 2),
-            aic.sd=round(sd(AICc), 2)) %>% 
-  ungroup() %>% 
-  mutate(aic=paste0(aic.mn, " (SD=", aic.sd, ")"),
-         delta=paste0(delta.mn, " (SD=", delta.sd, ")"),
-         wt=paste0(wt.mn, " (SD=", wt.sd, ")")) %>% 
-  arrange(delta.mn)
-
-aic.ccfr.boom.tbl <- aic.ccfr.boom %>%   
-  dplyr::select(Modnames, k, aic, delta, wt)
-View(aic.ccfr.boom.tbl)
-
-ggplot(aic.ccfr.boom) +
-  geom_bar(aes(x=Modnames, y=delta.mn), stat="identity") +
-  geom_errorbar(aes(x=Modnames, ymin=delta.mn-delta.ci, ymax=delta.mn+delta.ci), width=0.2, position=position_dodge(0.9))
-
-#Coefficients----
-mod.ccfr.boom <- rbindlist(occ.ccfr.boom.mod) %>% 
-  group_by(var) %>% 
-  summarize(est.mn=mean(Estimate),
-            est.sd=sd(Estimate),
-            se.mn=mean(SE),
-            se.sd=sd(SE)) %>% 
-  ungroup()
-mod.ccfr.boom
-
-#G2. FIRE VS WELL####
-
-#3. Check for vif & covariation----
-site.firewell <- site.2d %>%
-  dplyr::filter(is.na(time.cc))
-
-vif(site.firewell %>% 
-      dplyr::select(time.fire, time.well, time.min, pine, wetland) %>% 
-      data.frame())
-
-cor(site.firewell %>% 
-      dplyr::select(time.fire, time.well, time.min, pine, wetland) %>% 
-      data.frame())
-
-ggpairs(site.firewell %>% 
-          dplyr::select(time.fire, time.well, time.min, pine, wetland) %>% 
-          data.frame())
-#time min pretty strongly correlated with time.fire and time.well
-
-boot <- 100
-
-occ.firewell.boom.aic <- list()
-occ.firewell.call.aic <- list()
-occ.firewell.boom.mod <- list()
-occ.firewell.call.mod <- list()
-for(i in 1:boot){
-  
-  #4. Spatial thinning----
-  dat.firewell <- site.2d %>%
-    dplyr::filter(is.na(time.cc)) %>% 
-    unique() %>% 
-    group_by(cell) %>% 
-    sample_n(1) %>% 
-    ungroup() %>% 
-    left_join(dat)
-  
-  table(dat.firewell$boom, dat.firewell$call)
-  
-  #5. Format into unmarked objects----
-  hist.boom.firewell <- dat.firewell %>% 
-    dplyr::select(ID, n, boom) %>% 
-    spread(key = n, value = boom) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.call.firewell <- dat.firewell%>% 
-    dplyr::select(ID, n, call) %>% 
-    spread(key = n, value = call) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Set.firewell <- dat.firewell %>% 
-    dplyr::select(ID, n, sundiff) %>% 
-    spread(key=n, value=sundiff) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Doy.firewell <- dat.firewell %>% 
-    dplyr::select(ID, n, yday) %>% 
-    spread(key=n, value=yday) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n1.firewell <- dat.firewell %>% 
-    dplyr::select(ID, n, s2n.1) %>% 
-    spread(key=n, value=s2n.1) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n2.firewell <- dat.firewell %>% 
-    dplyr::select(ID, n, s2n.2) %>% 
-    spread(key=n, value=s2n.2) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  obs.cov.firewell <- list(Set = hist.Set.firewell, Doy = hist.Doy.firewell, s2n1 = hist.s2n1.firewell, s2n2 = hist.s2n2.firewell)
-  
-  site.cov.firewell <- dat.firewell %>% 
-    dplyr::select(ID, pine, wetland, time.min, time.dist, time.fire, time.well) %>% 
-    unique() %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  df.boom.firewell <- unmarkedFrameOccu(hist.boom.firewell, siteCovs=site.cov.firewell, obsCovs=obs.cov.firewell)
-  df.call.firewell <- unmarkedFrameOccu(hist.call.firewell, siteCovs=site.cov.firewell, obsCovs=obs.cov.firewell)
-  
-  #6. Model----
-  #BOOM
-  occ1 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.well*time.fire*pine,
-               data=df.boom.firewell)
-  occ2 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.well*pine + time.fire*pine,
-               data=df.boom.firewell)
-  occ3 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.well*pine,
-               data=df.boom.firewell)
-  occ4 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.fire*pine,
-               data=df.boom.firewell)
-  occ5 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.min*pine,
-               data=df.boom.firewell)
-  
-  #Save out AIC
-  occ.firewell.boom.aic[[i]] <- aictab(list(occ1, occ2, occ3, occ4, occ5), sort=FALSE) %>% 
-    data.frame() %>% 
-    mutate(boot=i)
-  
-  #Save out top model (hand picked from preview of results, not top AIC)
-  occ.firewell.boom.mod[[i]] <- summary(occ4)[['state']] %>% 
-    mutate(boot=i,
-           var=row.names(data.frame(occ4@estimates@estimates[["state"]]@estimates)))
-
-  print(paste0("COMPLETED BOOTSTRAP ", i))
-  
-}
-
-#7. Collapse bootstrapped results----
-#AIC----
-aic.firewell.boom <- rbindlist(occ.firewell.boom.aic) %>% 
-  group_by(Modnames) %>% 
-  summarize(delta.mn=round(mean(Delta_AICc), 2),
-            delta.sd=round(sd(Delta_AICc), 2),
-            delta.ci=round(sd(Delta_AICc)/sqrt(100)*1.96, 2),
-            wt.mn=round(mean(AICcWt), 2),
-            wt.sd=round(sd(AICcWt), 2),
-            wt.ci=round(sd(AICcWt)/sqrt(100)*1.96, 2),
-            k=mean(K),
-            aic.mn=round(mean(AICc), 2),
-            aic.sd=round(sd(AICc), 2)) %>% 
-  ungroup() %>% 
-  mutate(aic=paste0(aic.mn, " (SD=", aic.sd, ")"),
-         delta=paste0(delta.mn, " (SD=", delta.sd, ")"),
-         wt=paste0(wt.mn, " (SD=", wt.sd, ")")) %>% 
-  arrange(delta.mn)
-
-aic.firewell.boom.tbl <- aic.firewell.boom %>%   
-  dplyr::select(Modnames, k, aic, delta, wt)
-View(aic.firewell.boom.tbl)
-
-ggplot(aic.firewell.boom) +
-  geom_bar(aes(x=Modnames, y=delta.mn), stat="identity") +
-  geom_errorbar(aes(x=Modnames, ymin=delta.mn-delta.ci, ymax=delta.mn+delta.ci), width=0.2, position=position_dodge(0.9))
-
-#Coefficients----
-mod.firewell.boom <- rbindlist(occ.firewell.boom.mod) %>% 
-  group_by(var) %>% 
-  summarize(est.mn=mean(Estimate),
-            est.sd=sd(Estimate),
-            se.mn=mean(SE),
-            se.sd=sd(SE)) %>% 
-  ungroup()
-mod.firewell.boom
-
-
-#G3. WELL vs CC####
-
-#3. Check for vif & covariation----
-site.wellcc <- site.2d %>%
-  dplyr::filter(is.na(time.fire))
-
-vif(site.wellcc %>% 
-      dplyr::select(time.cc, time.well, time.min, pine, wetland) %>% 
-      data.frame())
-
-cor(site.wellcc %>% 
-      dplyr::select(time.cc, time.well, time.min, pine, wetland) %>% 
-      data.frame())
-
-ggpairs(site.wellcc %>% 
-          dplyr::select(time.cc, time.well, time.min, pine, wetland) %>% 
-          data.frame())
-#time min pretty strongly correlated with time.cc and time.well
-#verrrrry little pine
-
-boot <- 100
-
-occ.wellcc.boom.aic <- list()
-occ.wellcc.call.aic <- list()
-occ.wellcc.boom.mod <- list()
-occ.wellcc.call.mod <- list()
-for(i in 1:boot){
-  
-  #4. Spatial thinning----
-  dat.wellcc <- site.2d %>%
-    dplyr::filter(is.na(time.fire)) %>% 
-    unique() %>% 
-    group_by(cell) %>% 
-    sample_n(1) %>% 
-    ungroup() %>% 
-    left_join(dat)
-  
-  table(dat.wellcc$boom, dat.wellcc$call)
-  
-  #5. Format into unmarked objects----
-  hist.boom.wellcc <- dat.wellcc %>% 
-    dplyr::select(ID, n, boom) %>% 
-    spread(key = n, value = boom) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.call.wellcc <- dat.wellcc%>% 
-    dplyr::select(ID, n, call) %>% 
-    spread(key = n, value = call) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Set.wellcc <- dat.wellcc %>% 
-    dplyr::select(ID, n, sundiff) %>% 
-    spread(key=n, value=sundiff) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.Doy.wellcc <- dat.wellcc %>% 
-    dplyr::select(ID, n, yday) %>% 
-    spread(key=n, value=yday) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n1.wellcc <- dat.wellcc %>% 
-    dplyr::select(ID, n, s2n.1) %>% 
-    spread(key=n, value=s2n.1) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.s2n2.wellcc <- dat.wellcc %>% 
-    dplyr::select(ID, n, s2n.2) %>% 
-    spread(key=n, value=s2n.2) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  obs.cov.wellcc <- list(Set = hist.Set.wellcc, Doy = hist.Doy.wellcc, s2n1 = hist.s2n1.wellcc, s2n2 = hist.s2n2.wellcc)
-  
-  site.cov.wellcc <- dat.wellcc %>% 
-    dplyr::select(ID, pine, wetland, time.min, time.dist, time.cc, time.well) %>% 
-    unique() %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  df.boom.wellcc <- unmarkedFrameOccu(hist.boom.wellcc, siteCovs=site.cov.wellcc, obsCovs=obs.cov.wellcc)
-  df.call.wellcc <- unmarkedFrameOccu(hist.call.wellcc, siteCovs=site.cov.wellcc, obsCovs=obs.cov.wellcc)
-  
-  #6. Model----
-  #BOOM
-  mod1 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.cc*time.well*pine,
-               data=df.boom.wellcc))
-  mod2 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.cc*pine + time.well*pine,
-               data=df.boom.wellcc))
-  mod3 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.cc*pine,
-               data=df.boom.wellcc))
-  mod4 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.well*pine,
-               data=df.boom.wellcc))
-  mod5 <- try(occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~time.min*pine,
-               data=df.boom.wellcc))
-  
-  rm(err)
-  err <- try(aictab(list(mod1, mod2, mod3, mod4, mod5), sort=FALSE))
-  
-  if(inherits(err, "try-error")){
-    next
-  }
-  
-  #Save out AIC
-  occ.wellcc.boom.aic[[i]] <- aictab(list(mod1, mod2, mod3, mod4, mod5), sort=FALSE) %>% 
-    data.frame() %>% 
-    mutate(boot=i)
-  
-  #Save out top model (hand picked from preview of results, not top AIC)
-  occ.wellcc.boom.mod[[i]] <- summary(mod4)[['state']] %>% 
-    mutate(boot=i,
-           var=row.names(data.frame(mod4@estimates@estimates[["state"]]@estimates)))
-  
-  rm(list=ls(pattern="^mod"))
-  
-  print(paste0("COMPLETED BOOTSTRAP ", i))
-  
-}
-
-#7. Collapse bootstrapped results----
-#AIC----
-aic.wellcc.boom <- rbindlist(occ.wellcc.boom.aic) %>% 
-  group_by(Modnames) %>% 
-  summarize(delta.mn=round(mean(Delta_AICc), 2),
-            delta.sd=round(sd(Delta_AICc), 2),
-            delta.ci=round(sd(Delta_AICc)/sqrt(100)*1.96, 2),
-            wt.mn=round(mean(AICcWt), 2),
-            wt.sd=round(sd(AICcWt), 2),
-            wt.ci=round(sd(AICcWt)/sqrt(100)*1.96, 2),
-            k=mean(K),
-            aic.mn=round(mean(AICc), 2),
-            aic.sd=round(sd(AICc), 2)) %>% 
-  ungroup() %>% 
-  mutate(aic=paste0(aic.mn, " (SD=", aic.sd, ")"),
-         delta=paste0(delta.mn, " (SD=", delta.sd, ")"),
-         wt=paste0(wt.mn, " (SD=", wt.sd, ")")) %>% 
-  arrange(delta.mn)
-
-aic.wellcc.boom.tbl <- aic.wellcc.boom %>%   
-  dplyr::select(Modnames, k, aic, delta, wt)
-View(aic.wellcc.boom.tbl)
-
-ggplot(aic.wellcc.boom) +
-  geom_bar(aes(x=Modnames, y=delta.mn), stat="identity") +
-  geom_errorbar(aes(x=Modnames, ymin=delta.mn-delta.ci, ymax=delta.mn+delta.ci), width=0.2, position=position_dodge(0.9))
-
-#Coefficients----
-mod.wellcc.boom <- rbindlist(occ.wellcc.boom.mod) %>% 
-  group_by(var) %>% 
-  summarize(est.mn=mean(Estimate),
-            est.sd=sd(Estimate),
-            se.mn=mean(SE),
-            se.sd=sd(SE)) %>% 
-  ungroup()
-mod.wellcc.boom
-
-#H. Does # of disturbances & # of types matter####
-
-#1. Wrangle----
-site.many <- site.dat %>% 
-  group_by(StationKey, DepYear, cell, Latitude, Longitude, pine, wetland, types, count) %>% 
-  summarize(time=min(time)) %>% 
-  ungroup()
-
-#2. Check for vif & covariation----
-vif(site.many %>% 
-      dplyr::select(time, pine, wetland, types, count) %>% 
-      data.frame())
-
-cor(site.many %>% 
-      dplyr::select(time, pine, wetland, types, count) %>% 
-      data.frame())
-#Types & count covary. Pick one?
-
-#3. Spatial thinning----
-boot <- 10 
-
-many.boom.aic <- list()
-for(i in 1:boot){
-  
-  dat.many <- site.many %>% 
-    group_by(cell) %>% 
-    sample_n(1) %>% 
-    ungroup() %>% 
-    left_join(dat)
-  
-  #4. Format into unmarked objects----
-  hist.many.boom <- dat.many %>% 
-    dplyr::select(ID, n, boom) %>% 
-    spread(key = n, value = boom) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.many.call <- dat.many%>% 
-    dplyr::select(ID, n, call) %>% 
-    spread(key = n, value = call) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.many.set <- dat.many %>% 
-    dplyr::select(ID, n, sundiff) %>% 
-    spread(key = n, value = sundiff) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame() 
-  
-  hist.many.Doy <- dat.many %>% 
-    dplyr::select(ID, n, yday) %>% 
-    spread(key=n, value=yday) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.many.psd1 <- dat.many %>% 
-    dplyr::select(ID, n, psd.1) %>% 
-    spread(key=n, value=psd.1) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.many.s2n1 <- dat.many %>% 
-    dplyr::select(ID, n, s2n.1) %>% 
-    spread(key=n, value=s2n.1) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  hist.many.s2n2 <- dat.many %>% 
-    dplyr::select(ID, n, s2n.2) %>% 
-    spread(key=n, value=s2n.2) %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  obs.cov.many <- list(Set = hist.many.set, Doy = hist.many.Doy, psd1 = hist.many.psd1, s2n2 = hist.many.s2n2, s2n1 = hist.many.s2n1)
-  
-  site.cov.many <- dat.many %>% 
-    dplyr::select(ID, pine, wetland, count, types, time) %>% 
-    unique() %>% 
-    arrange(ID) %>% 
-    dplyr::select(-ID) %>% 
-    data.frame()
-  
-  df.boom.many <- unmarkedFrameOccu(hist.many.boom, siteCovs=site.cov.many, obsCovs=obs.cov.many)
-  df.call.many <- unmarkedFrameOccu(hist.many.call, siteCovs=site.cov.many, obsCovs=obs.cov.many)
-  
-  #5. Model----
-  cov1 <- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-               ~pine*time + time*types,
-               data=df.boom.many)
-  cov2<- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-              ~pine*time + types,
-              data=df.boom.many)
-  cov3<- occu(~ Set + Doy + s2n1 + I(s2n1^2) + s2n2 + I(s2n2^2)
-              ~pine*time,
-              data=df.boom.many)
-  
-  many.boom.aic[[i]] <- aictab(list(cov1, cov2, cov3), sort=FALSE) %>% 
-    data.frame() %>% 
-    mutate(boot=i)
-  
-  print(paste0("Finished bootstrap ", i))
-  
-}
-
-#6. Collapse bootstrapped results----
-many.boom <- rbindlist(many.boom.aic) %>% 
-  group_by(Modnames) %>% 
-  summarize(delta.mn=round(mean(Delta_AICc), 2),
-            delta.sd=round(sd(Delta_AICc), 2),
-            delta.ci=round(sd(Delta_AICc)/sqrt(100)*1.96, 2),
-            wt.mn=round(mean(AICcWt), 2),
-            wt.sd=round(sd(AICcWt), 2),
-            wt.ci=round(sd(AICcWt)/sqrt(100)*1.96, 2),
-            k=mean(K),
-            aic.mn=round(mean(AICc), 2),
-            aic.sd=round(sd(AICc), 2)) %>% 
-  ungroup() %>% 
-  mutate(aic=paste0(aic.mn, " (SD=", aic.sd, ")"),
-         delta=paste0(delta.mn, " (SD=", delta.sd, ")"),
-         wt=paste0(wt.mn, " (SD=", wt.sd, ")")) %>% 
-  arrange(delta.mn)
-
-many.boom.tbl <- many.boom %>%   
-  dplyr::select(Modnames, k, aic, delta, wt)
-View(many.boom.tbl)
-
-ggplot(many.boom) +
-  geom_bar(aes(x=Modnames, y=delta.mn), stat="identity") +
-  geom_errorbar(aes(x=Modnames, ymin=delta.mn-delta.ci, ymax=delta.mn+delta.ci), width=0.2, position=position_dodge(0.9))
-#NOPE
-
-summary(cov5)
