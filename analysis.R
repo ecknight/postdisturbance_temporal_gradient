@@ -312,7 +312,7 @@ site.dat <- dat %>%
   unique() %>% 
   sample_n(400) %>% 
   left_join(dat) %>% 
-  dplyr::select(ProjectID, StationKey, DepYear, Latitude, Longitude, disturbance, time, sitearea, pine, wetland, cell, types, count) %>% 
+  dplyr::select(ID, ProjectID, StationKey, DepYear, Latitude, Longitude, disturbance, time, sitearea, pine, wetland, cell, types, count) %>% 
   unique()
 
 dat <- dat %>% 
@@ -863,7 +863,7 @@ head(pred.cov.call)
 write.csv(pred.cov.boom, "PDTGVegetationPredictionsBoom.csv", row.names = FALSE)
 write.csv(pred.cov.call, "PDTGVegetationPredictionsCall.csv", row.names = FALSE)
 
-#10. Plot----
+#9. Plot----
 plot.cov.boom <- ggplot(pred.cov.boom) +
   geom_line(aes(x=pine, y=Occu))+
   geom_ribbon(aes(x=pine, ymin=OccuLower, ymax=OccuUpper), colour="grey70", alpha=0.2) +
@@ -899,7 +899,13 @@ cor(site.1d1t %>%
 ggpairs(site.1d1t %>% 
           dplyr::select(time, disturbance, pine, wetland))
 
-#3. New data for prediction----
+#3. Visualize----
+ggplot(dat) +
+  geom_smooth(aes(x=time, y=boom)) +
+  geom_jitter(aes(x=time, y=boom, colour=pine)) +
+  facet_wrap(~disturbance)
+
+#4. New data for prediction----
 hist.fire <- site.1d1t %>% 
   dplyr::filter(disturbance=="fire")
 fire.max <- max(hist.fire$time)
@@ -924,7 +930,7 @@ new.dat <- data.frame(expand.grid(disturbance=c("fire", "well", "cc"),
                                   Doy = mean(dat$yday),
                                   Set = mean(dat$sundiff)))
 
-#4. Spatial thinning----
+#5. Spatial thinning----
 boot <- 100
 disturbances <- unique(site.1d1t$disturbance)
 
@@ -1049,6 +1055,8 @@ for(g in 1:boot){
     mutate(boot=g,
            var=row.names(data.frame(occ1@estimates@estimates[["state"]]@estimates)))
   
+  occboom <- occ1
+  
   #CALL
   occ1 <- occu(~ s2n2 + I(s2n2^2)
                ~time*wetland + time*I(wetland^2) + time*disturbance,
@@ -1088,9 +1096,9 @@ for(g in 1:boot){
     mutate(boot=g,
            var=row.names(data.frame(occ8@estimates@estimates[["state"]]@estimates)))
   
-  #8. Predict----
-  occboom <- occ1
+  occcall <- occ8
   
+  #8. Predict----
   occ.1d.boom.pred[[g]] <- new.dat %>% 
     cbind(predict(occboom, type="state", newdata=new.dat)) %>% 
     dplyr::rename(Occu=Predicted, OccuE=SE, OccuLower=lower, OccuUpper=upper) %>% 
@@ -1100,7 +1108,10 @@ for(g in 1:boot){
                     (disturbance=="well" & time <= wells.max & time >= wells.min) |
                     (disturbance=="cc" & time <= cc.max & time >= cc.min))
   
-  occcall <- occ8
+  ggplot(occ.1d.boom.pred[[g]]) +
+    geom_line(aes(x=time, y=Occu, group=pine)) +
+    geom_ribbon(aes(x=time, ymin=OccuLower, ymax=OccuUpper, group=pine), alpha=0.2) +
+    facet_wrap(~disturbance)
   
   occ.1d.call.pred[[g]] <- new.dat %>% 
     cbind(predict(occcall, type="state", newdata=new.dat)) %>% 

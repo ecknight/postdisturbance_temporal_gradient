@@ -380,16 +380,17 @@ pred.det <- read.csv("PDTGDetectionCovariatePredictions.csv") %>%
          upr = DetUpper,
          lwr = DetLower)
 pred.det$response <- factor(pred.det$response, labels=c("Territorial habitat use", "Extraterritorial habitat use"))
-pred.det$cov <- factor(pred.det$cov, levels=c("s2n2"), labels=c("StN (4.4-5.6 kHz)"))
+pred.det$cov <- factor(pred.det$cov, levels=c("s2n2"), labels=c("Signal to noise ratio (4.4-5.6 kHz)"))
 
 #Vegetation predictions
 pred.cov.boom <- read.csv("PDTGVegetationPredictionsBoom.csv") %>% 
   mutate(response="Territorial habitat use",
          cov="Proportion of pine forest") %>% 
-  rename(x=pine,,
+  rename(x=pine,
          fit = Occu,
          upr = OccuUpper,
          lwr = OccuLower)
+
 pred.cov.call <- read.csv("PDTGVegetationPredictionsCall.csv") %>% 
   mutate(response="Extraterritorial habitat use",
          cov="Mean wetland probability") %>% 
@@ -397,6 +398,7 @@ pred.cov.call <- read.csv("PDTGVegetationPredictionsCall.csv") %>%
          fit = Occu,
          upr = OccuUpper,
          lwr = OccuLower)
+
 pred.cov <- rbind(pred.cov.boom, pred.cov.call) %>% 
   dplyr::select(response, cov, x, fit, upr, lwr) %>% 
   mutate(mod = "Vegetation covariates")
@@ -404,39 +406,43 @@ pred.cov <- rbind(pred.cov.boom, pred.cov.call) %>%
 pred <- rbind(pred.det, pred.cov)
 
 plot.det.boom <- ggplot(subset(pred.det, response=="Territorial habitat use")) +
-  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.4) +
+  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.2, colour="grey70") +
   geom_line(aes(x=x, y=fit), colour="yellow3", size=1.2) +
   my.theme +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-  xlab("StN (4.4-5.6 kHz)") +
-  ylab("Probability of territorial detection")
+  xlab("Signal to noise ratio (4.4-5.6 kHz)") +
+  ylab("Probability of territorial detection") +
+  ylim(c(0,1))
 #plot.det.boom
 
 plot.det.call <- ggplot(subset(pred.det, response=="Extraterritorial habitat use")) +
-  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.4) +
+  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.2, colour="grey70") +
   geom_line(aes(x=x, y=fit), colour="yellow3", size=1.2) +
   my.theme +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
-  xlab("StN (4.4-5.6 kHz)") +
-  ylab("Probability of extraterritorial detection")
+  xlab("Signal to noise ratio (4.4-5.6 kHz)") +
+  ylab("Probability of extraterritorial detection") +
+  ylim(c(0,1))
 #plot.det.call
 
 plot.cov.boom <- ggplot(subset(pred.cov, response=="Territorial habitat use")) +
-  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.4) +
-  geom_line(aes(x=x, y=fit), colour="springgreen4", size=1.2) +
+  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.2, colour="grey70") +
+  geom_line(aes(x=x, y=fit), colour="chartreuse4", size=1.2) +
   my.theme +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   xlab("Proportion of pine forest") +
-  ylab("Probability of territorial habitat use")
+  ylab("Probability of territorial habitat use") +
+  ylim(c(0,1))
 #plot.cov.boom
 
 plot.cov.call <- ggplot(subset(pred.cov, response=="Extraterritorial habitat use")) +
-  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.4) +
+  geom_ribbon(aes(x=x, ymin=lwr, ymax=upr), alpha=0.2, colour="grey70") +
   geom_line(aes(x=x, y=fit), colour="steelblue3", size=1.2) +
   my.theme +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   xlab("Mean wetland probability") +
-  ylab("Probability of extraterritorial habitat use")
+  ylab("Probability of extraterritorial habitat use") +
+  ylim(c(0,1))
 #plot.cov.call
 
 ggsave(plot=grid.arrange(plot.det.boom, plot.cov.boom, plot.det.call, plot.cov.call, ncol=2, nrow=2), 
@@ -445,22 +451,27 @@ ggsave(plot=grid.arrange(plot.det.boom, plot.cov.boom, plot.det.call, plot.cov.c
 #FIGURE 3. DISTURBANCE EFFECTS####
 
 pred.1d.boom <- read.csv("PDTGSingleDisturbancePredictionsBoom.csv")
-pred.1d.boom$disturbance <- factor(pred.1d.boom$disturbance, levels=c("fire", "cc", "well"), labels=c("Fire", "Harvest", "Wellpad"))
+ggplot(pred.1d.boom) +
+  geom_line(aes(x=time, y=Occu, group=pine)) +
+  geom_ribbon(aes(x=time, ymin=OccuLower, ymax=OccuUpper, group=pine), alpha=0.2) +
+  facet_wrap(~disturbance)
+
+pred.1d.boom$disturbance <- factor(pred.1d.boom$disturbance, levels=c("fire", "cc", "well"), labels=c("Fire", "Harvest", "Well site"))
 
 plot.1d.boom <- ggplot(pred.1d.boom) +
   geom_ribbon(aes(x=time, ymin=OccuLower, ymax=OccuUpper, group=factor(factor(pine))), colour="grey70", alpha=0.2) +
-  geom_line(aes(x=time, y=Occu, colour=factor(pine)))+
+  geom_line(aes(x=time, y=Occu, colour=factor(pine)), size=1.2)+
   facet_wrap(~disturbance) +
   labs(x="Years since disturbance", y="Probability of territorial habitat use", colour="Proportion of pine forest")+
   xlim(c(0,80)) +
   ylim(c(0,1)) +
   my.theme +
-  scale_colour_manual(values=c("darkgoldenrod1", "chartreuse4")) +
+  scale_colour_manual(values=c("darkolivegreen3", "chartreuse4")) +
   theme(legend.position="bottom")
 plot.1d.boom
 
 ggsave(plot=plot.1d.boom, 
-       filename="Figs/Fig5SingleDisturbance.jpeg", width=8, height=4, units="in", device="jpeg")
+       filename="Figs/Fig3Disturbance.jpeg", width=10, height=5, units="in", device="jpeg")
 
 #SUMMARY STATS####
 
