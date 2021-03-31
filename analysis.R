@@ -333,6 +333,13 @@ ggplot() +
   #  geom_hex(data=dat, aes(x=Longitude, y=Latitude)) +
   facet_grid( ~ types)
 
+#11. Differences in disturbance area between types----
+dat %>% 
+  mutate(distarea = 0.0001*distarea) %>% 
+  group_by(disturbance) %>% 
+  summarize(mean=mean(distarea),
+  sd=sd(distarea))
+
 #C. DETECTION COVARIATES####
 #1. Check for vif & covariation----
 vif(dat %>% 
