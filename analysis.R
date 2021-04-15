@@ -1,7 +1,7 @@
 #title: Analysis of common nighthawk disturbance response
 #author: Elly C. Knight
 
-options(scipen = 999999)
+options(scipen = 999)
 
 library(tidyverse)
 library(raster)
@@ -34,10 +34,6 @@ my.theme <- theme_classic() +
         legend.text=element_text(size=12),
         legend.title=element_text(size=14),
         plot.title=element_text(size=14))
-
-
-#TO DO: FIX MODEL NAMES FROM COV TO MOD####
-#TO DO: FIX OCCUPANCY DETECTIONS FORMATTING####
 
 #A. READ IN ALL DATA####
 #1. Read in study site data----
@@ -341,6 +337,8 @@ dat %>%
   sd=sd(distarea))
 
 #C. DETECTION COVARIATES####
+dat <- read.csv("PDTGDataWrangled&Cleaned.csv")
+
 #1. Check for vif & covariation----
 vif(dat %>% 
       dplyr::select(sundiff, yday, psd.1, psd.2, s2n.2, s2n.1) %>% 
