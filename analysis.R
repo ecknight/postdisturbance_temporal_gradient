@@ -216,22 +216,26 @@ wells.sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/well_sa_year_area.shp") %
 #3. Intersect sites with disturbance polygons----
 site.fire <- data.frame(sitearea= as.numeric(st_area(st_intersection(fire.sa, site.buff)))) %>% 
   cbind(data.frame(st_intersection(fire.sa, site.buff))) %>% 
-  rename(year = YEAR, class = BURN_CLASS, distarea=HECTARES_U) %>% 
-  dplyr::select(StationKey, year, sitearea, distarea) %>% 
+  rename(year = YEAR, class = BURN_CLASS, distarea=HECTARES_U, distid=FIRENUMBER) %>% 
+  dplyr::select(StationKey, year, sitearea, distarea, distid) %>% 
   mutate(distarea = distarea*10000,
          disturbance="fire")
 
 site.cc <- data.frame(sitearea= as.numeric(st_area(st_intersection(cc.sa, site.buff)))) %>% 
   cbind(data.frame(st_intersection(cc.sa, site.buff))) %>% 
-  rename(year = YEAR, distarea = Shape_Area) %>% 
-  dplyr::select(StationKey, year, sitearea, distarea) %>% 
+  rename(year = YEAR, distarea = Shape_Area, distid=ID) %>% 
+  dplyr::select(StationKey, year, sitearea, distarea, distid) %>% 
   mutate(disturbance="cc")
 
 site.well <- data.frame(sitearea= as.numeric(st_area(st_intersection(wells.sa, site.buff)))) %>% 
   cbind(data.frame(st_intersection(wells.sa, site.buff))) %>% 
-  rename(year = YEAR, distarea = Shape_Area) %>% 
-  dplyr::select(StationKey, year, sitearea, distarea) %>% 
+  rename(year = YEAR, distarea = Shape_Area, distid=ID) %>% 
+  dplyr::select(StationKey, year, sitearea, distarea, distid) %>% 
   mutate(disturbance="well")
+
+site.dist <- rbind(site.fire, site.cc, site.well)
+
+write.csv(site.dist, "DisturbanceInventory.csv", row.names = FALSE)
 
 #4. Extract pine and wetland values----
 pine <- raster("pine-200.tif")

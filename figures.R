@@ -51,14 +51,31 @@ sites <- dat %>%
 #TO DO: NEEDS STUDY AREA BOUNDARY####
 
 #A1. Maps----
+
+#Add study area perimeter
+sa_sf <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/PDTG_studyarea_V1.shp") %>% 
+  st_make_valid() %>% 
+  st_transform(crs=4326)
+sa_sp <- as(st_zm(sa_sf), 'Spatial')
+
+sa_broom <- broom::tidy(sa_sp)
+
+ggmap(map) +
+  geom_polygon(data=sa_broom, aes(x=long, y=lat, group=group), fill=NA, colour="black")
+
 #Get background data
 register_google(key="AIzaSyCta9P4x7jGNELznpwlx07VZkkLVk3FP4M")
 
-center <- dat %>% 
+center <- sites %>% 
   summarize(long=mean(Longitude),
             lat=mean(Latitude))
 
-map <- get_map(center, zoom=7, force=TRUE, maptype="satellite", color="color")
+center <- st_centroid(sa_sf) %>% 
+  st_coordinates() %>% 
+  data.frame() %>% 
+  dplyr::rename(long=X, lat=Y)
+
+map <- get_map(center, zoom=6, force=TRUE, maptype="satellite", color="color")
 
 map_attributes <- attributes(map)
 
@@ -67,44 +84,24 @@ map_transparent <- matrix(adjustcolor(map,
                                     nrow = nrow(map))
 attributes(map_transparent) <- map_attributes
 
-#trying to reproject imagery
-map.rast <- ggmap_rast(map_transparent)
-crs(map.rast) <- 4326
-map.rast.10tm <- map.rast %>% 
-  projectRaster(crs=3400) %>% 
-  as.data.frame(xy=TRUE)
-  
-#Fire map
-fire <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/fire_sa.tif") %>% 
-  aggregate(fact=30) %>% 
-  projectRaster(crs=4326) %>% 
-  as.data.frame(xy=TRUE) %>% 
-  dplyr::filter(!is.na(fire_sa))
-
+#Fire data
 sites.fire <- sites %>% 
   dplyr::filter(disturbance=="fire")
 
-#Add study area perimeter
-sa <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/PDTG_studyarea_V1.shp") %>% 
-  st_make_valid() %>% 
+fire_sf <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG/fire_sa.shp", crs=3400) %>% 
   st_transform(crs=4326)
 
-extent(fire)
-sa.crop <- st_intersection(sa, st_set_crs(st_as_sf(as(raster::extent(-114.9958, -109.9933, 54.58757, 57.92461), "SpatialPolygons")), st_crs(sa)))
+fire <- st_rasterize(fire_sf[,"YEAR"], options = "ALL_TOUCHED=TRUE")
 
-write_sf(sa.crop, "StudyAreaCropped.shp")
+fire_df <- fire %>% 
+  as.data.frame(xy=TRUE) %>% 
+  dplyr::filter(!is.na(YEAR))
 
-sa.crop <- readOGR("StudyAreaCropped.shp") %>% 
-  fortify() %>% 
-  mutate(ID = row_number())
-plot(sa.crop)
-
-ggplot() +
-  geom_polygon(data=sa.crop, aes(long, lat), fill=NA, colour="black")
-
+#Fire map
 map.fire <- ggmap(map) +
-    geom_raster(data=fire, aes(x=x, y=y, fill=fire_sa), na.rm=TRUE) +
-    geom_polygon(data=sa.crop, aes(long, lat), fill=NA, colour="black") +
+    geom_raster(data=fire_df, aes(x=x, y=y, fill=YEAR), na.rm=TRUE) +
+    geom_polygon(data=sa_broom, aes(x=long, y=lat, group=group),
+                 fill=NA, colour="black", size=1.5) +
     geom_point(aes(x = Longitude, y = Latitude),
                shape = 21,
                colour="grey25",
@@ -112,40 +109,47 @@ map.fire <- ggmap(map) +
                data = sites.fire, 
                alpha = 1,
                size=3) +
-  ggspatial::annotation_north_arrow(location = "br",
+  ggspatial::annotation_north_arrow(location = "bl",
                                     style = ggspatial::north_arrow_orienteering(fill = c("grey75", "grey25"), line_col = "grey75", text_col="grey75"),
                                     height=unit(1, "cm"),
                                     width=unit(1, "cm")) +
-  ggsn::scalebar(x.min = -115, x.max = -112.6, 
-                 y.min = 54.6, y.max = 56, 
+  ggsn::scalebar(x.min = -116, x.max = -114.3, 
+                 y.min = 54.2, y.max = 56, 
                  transform=TRUE, model="WGS84",
                  dist=50, dist_unit="km",
                  box.fill=c("grey75", "grey25"),
                  box.color="grey75",height=0.1,
                  st.bottom=FALSE, st.dist=0.08, st.size=3, st.color="grey75") +
-  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +  
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2018)) +  
   my.theme +
   coord_sf(datum = NA) +
+#  coord_map(projection="albers") +
   xlab("") +
   ylab("") +
-  xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
-  ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
+  xlim(c(min(sa_broom$long)-0.1, max(sa_broom$long)+0.1)) +
+  ylim(c(min(sa_broom$lat)-0.1, max(sa_broom$lat)+0.1)) +
   theme(legend.position = "none",
         plot.margin = unit(c(0,0,0,0), "cm"))
 map.fire
 
-#Harvest map
-cc <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/harvest_sa.tif") %>% 
-  aggregate(fact=30) %>% 
-  projectRaster(crs=4326) %>% 
-  as.data.frame(xy=TRUE) %>% 
-  dplyr::filter(!is.na(harvest_sa))
-
+#Harvest data
 sites.cc <- sites %>% 
   dplyr::filter(disturbance=="cc")
 
+cc_sf <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG//harvest_sa.shp", crs=3400) %>% 
+  st_transform(crs=4326)
+
+cc <- st_rasterize(cc_sf[,"YEAR"], options = "ALL_TOUCHED=TRUE")
+
+cc_df <- cc %>% 
+  as.data.frame(xy=TRUE) %>% 
+  dplyr::filter(!is.na(YEAR))
+
+#Harvest map
 map.cc <- ggmap(map) +
-  geom_raster(data=cc, aes(x=x, y=y, fill=harvest_sa), na.rm=TRUE) +
+  geom_raster(data=cc_df, aes(x=x, y=y, fill=YEAR), na.rm=TRUE) +
+  geom_polygon(data=sa_broom, aes(x=long, y=lat, group=group),
+               fill=NA, colour="black", size=1.5) +
   geom_point(aes(x = Longitude, y = Latitude),
              shape = 21,
              colour="grey25",
@@ -153,28 +157,36 @@ map.cc <- ggmap(map) +
              data = sites.cc, 
              alpha = 1,
              size=3) +
-  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +   
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2018)) +   
   my.theme +
   coord_sf(datum = NA) +
   xlab("") +
   ylab("") +
-  xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
-  ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
+  xlim(c(min(sa_broom$long)-0.1, max(sa_broom$long)+0.1)) +
+  ylim(c(min(sa_broom$lat)-0.1, max(sa_broom$lat)+0.1)) +
   theme(legend.position = "none",
         plot.margin = unit(c(0,0,0,0), "cm"))
+map.cc
 
-#Wellpad map
-well <- raster("/Volumes/ECK004/PDTG/Analysis/TIFs/wellsmerge_sa.tif") %>% 
-  aggregate(fact=30) %>% 
-  projectRaster(crs=4326) %>% 
-  as.data.frame(xy=TRUE) %>% 
-  dplyr::filter(!is.na(wellsmerge_sa))
-
+#Wellpad data
 sites.well <- sites %>% 
   dplyr::filter(disturbance=="well")
 
+well_sf <- read_sf("/Volumes/ECK004/GIS/Projects/PDTG//wells_sa.shp", crs=3400) %>% 
+  st_transform(crs=4326)
+
+well <- st_rasterize(well_sf[,"YEAR"], options = "ALL_TOUCHED=TRUE")
+
+well_df <- well %>% 
+  as.data.frame(xy=TRUE) %>% 
+  dplyr::filter(!is.na(YEAR))
+
+
+#Wellpad map
 map.well <- ggmap(map) +
-  geom_raster(data=well, aes(x=x, y=y, fill=wellsmerge_sa), na.rm=TRUE) +
+  geom_raster(data=well_df, aes(x=x, y=y, fill=YEAR), na.rm=TRUE) +
+  geom_polygon(data=sa_broom, aes(x=long, y=lat, group=group),
+               fill=NA, colour="black", size=1.5) +
   geom_point(aes(x = Longitude, y = Latitude),
              shape = 21,
              colour="grey25",
@@ -182,15 +194,16 @@ map.well <- ggmap(map) +
              data = sites.well, 
              alpha = 1,
              size=3) +
-  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2015)) +    
+  scale_fill_viridis_c(name="Year of\ndisturbance", option="A", limits=c(1935, 2018)) +    
   my.theme +
   coord_sf(datum = NA) +
   xlab("") +
   ylab("") +
-  xlim(c(min(sites$Longitude)-0.1, max(sites$Longitude)+0.1)) +
-  ylim(c(min(sites$Latitude)-0.1, max(sites$Latitude)+0.1)) +
+  xlim(c(min(sa_broom$long)-0.1, max(sa_broom$long)+0.1)) +
+  ylim(c(min(sa_broom$lat)-0.1, max(sa_broom$lat)+0.1)) +
   theme(legend.position = "none",
         plot.margin = unit(c(0,0,0,0), "cm"))
+map.well
 #A2. Single disturbance histograms----
 
 #Wrangle
@@ -282,7 +295,7 @@ photo.well <- ggplot() +
 
 #A5. Make legend----
 plot.legend <- ggmap(map) +
-  geom_raster(data=cc, aes(x=x, y=y, fill=harvest_sa), na.rm=TRUE) +
+  geom_raster(data=cc_df, aes(x=x, y=y, fill=YEAR), na.rm=TRUE) +
   geom_point(aes(x = Longitude, y = Latitude),
              shape = 21,
              colour="grey25",
@@ -356,20 +369,19 @@ map.nam <- ggplot() +
         legend.position="bottom")
 #map.nam
 
-#Part C: Put it together####
-
+#Part C: Put it together#### 
 ggsave(plot=grid.arrange(photo.fire, photo.cc, photo.well,
-                        map.fire, map.cc, map.well,
+                          map.fire, map.cc, map.well,
                          hist.fire, hist.cc, hist.well,
                          legend,
                          map.nam,
-                         widths = c(3, 6, 4, 4),
+                         widths = c(3, 9, 5, 5),
                          heights = c(4, 2, 2, 4),
                          layout_matrix = rbind(c(11, 4, 7, 1),
                                                c(11, 5, 8, 2),
                                                c(10, 5, 8, 2),
                                                c(10, 6, 9, 3))),
-       "Figs/Fig1StudyArea.jpeg", width=12, height=8, units="in", device="jpeg")
+       "Figs/Fig1StudyArea.jpeg", width=14, height=8, units="in", device="jpeg")
 
 #FIGURE 2. DETECTABILITY & VEGETATION COVARIATES####
 
@@ -450,7 +462,8 @@ ggsave(plot=grid.arrange(plot.det.boom, plot.cov.boom, plot.det.call, plot.cov.c
 
 #FIGURE 3. DISTURBANCE EFFECTS####
 
-pred.1d.boom <- read.csv("PDTGSingleDisturbancePredictionsBoom.csv")
+pred.1d.boom <- read.csv("PDTGSingleDisturbancePredictionsBoom.csv") %>% 
+  dplyr::filter(!(disturbance %in% c("cc", "well") & time > 50))
 ggplot(pred.1d.boom) +
   geom_line(aes(x=time, y=Occu, group=pine)) +
   geom_ribbon(aes(x=time, ymin=OccuLower, ymax=OccuUpper, group=pine), alpha=0.2) +
@@ -542,3 +555,13 @@ table(rec.coni$boom, rec.coni$call)
 nrow(val)
 table(val$validation)
 nrow(val)
+
+#Number of disturbances
+site.dist <- read.csv("DisturbanceInventory.csv")
+
+dat %>% 
+  left_join(site.dist, by = c("StationKey", "disturbance", "year")) %>% 
+  dplyr::select(disturbance, distid) %>% 
+  unique() %>% 
+  group_by(disturbance) %>% 
+  summarize(n=n())
